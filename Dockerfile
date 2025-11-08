@@ -6,7 +6,7 @@ COPY package*.json ./
 
 RUN touch /usr/local/bin/husky && chmod +x /usr/local/bin/husky
 
-RUN npm install --include=dev --no-audit
+RUN npm install --include=dev
 
 COPY . .
 
