@@ -11,7 +11,7 @@ RUN npm install --include=dev
 COPY . .
 
 WORKDIR /usr/src/app
-RUN if [ ! -f .env ]; then cp env-example-document .env; fi
+RUN if [ ! -f .env ]; then cp env-example-relational .env; fi
 
 RUN npm run build
 
