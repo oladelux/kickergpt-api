@@ -10,6 +10,9 @@ RUN npm install --include=dev
 
 COPY . .
 
+WORKDIR /usr/src/app
+RUN if [ ! -f .env ]; then cp env-example-document .env; fi
+
 RUN npm run build
 
 EXPOSE 3000
