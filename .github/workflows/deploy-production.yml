@@ -1,0 +1,48 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Node.js environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Step 4: Set environment variables for PostgreSQL (from GitHub Secrets)
+      # These will be used for migrations and E2E tests
+      - name: Set PostgreSQL environment variables
+        run: |
+         echo "DATABASE_TYPE=${{ secrets.PROD_DATABASE_TYPE }}" >> .env
+         echo "DATABASE_USERNAME=${{ secrets.PROD_DATABASE_USERNAME }}" >> .env
+         echo "DATABASE_PASSWORD=${{ secrets.PROD_DATABASE_PASSWORD }}" >> .env
+         echo "DATABASE_NAME=${{ secrets.PROD_DATABASE_NAME }}" >> .env
+         echo "NODE_ENV=production" >> .env
+        shell: bash
+
+      # Step 4: Run database migrations
+      - name: Run database migrations
+        if: github.ref == 'refs/heads/main'  # Only run on the main branch
+        run: npm run migration:run
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+
+      - name: Debug environment file
+        run: cat .env
+
+      # Step 5: Build Docker image
+      - name: Build Docker image
+        run: docker build -t playervista-api:latest .
