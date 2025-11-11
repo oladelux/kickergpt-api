@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import fs from 'node:fs/promises';
 import { ConfigService } from '@nestjs/config';
 import nodemailer from 'nodemailer';
@@ -7,19 +7,27 @@ import { AllConfigType } from '../config/config.type';
 
 @Injectable()
 export class MailerService {
-  private readonly transporter: nodemailer.Transporter;
+  private readonly transporter?: nodemailer.Transporter;
+  private readonly mailEnabled: boolean;
+  private readonly logger = new Logger(MailerService.name);
+
   constructor(private readonly configService: ConfigService<AllConfigType>) {
-    this.transporter = nodemailer.createTransport({
-      host: configService.get('mail.host', { infer: true }),
-      port: configService.get('mail.port', { infer: true }),
-      ignoreTLS: configService.get('mail.ignoreTLS', { infer: true }),
-      secure: configService.get('mail.secure', { infer: true }),
-      requireTLS: configService.get('mail.requireTLS', { infer: true }),
-      auth: {
-        user: configService.get('mail.user', { infer: true }),
-        pass: configService.get('mail.password', { infer: true }),
-      },
-    });
+    this.mailEnabled =
+      this.configService.get('mail.enabled', { infer: true }) ?? true;
+
+    if (this.mailEnabled) {
+      this.transporter = nodemailer.createTransport({
+        host: configService.get('mail.host', { infer: true }),
+        port: configService.get('mail.port', { infer: true }),
+        ignoreTLS: configService.get('mail.ignoreTLS', { infer: true }),
+        secure: configService.get('mail.secure', { infer: true }),
+        requireTLS: configService.get('mail.requireTLS', { infer: true }),
+        auth: {
+          user: configService.get('mail.user', { infer: true }),
+          pass: configService.get('mail.password', { infer: true }),
+        },
+      });
+    }
   }
 
   async sendMail({
@@ -30,6 +38,16 @@ export class MailerService {
     templatePath: string;
     context: Record<string, unknown>;
   }): Promise<void> {
+    if (!this.mailEnabled) {
+      this.logger.debug('Mail disabled; skipping sendMail');
+      return;
+    }
+
+    if (!this.transporter) {
+      this.logger.warn('Mailer transporter not initialized; skipping sendMail');
+      return;
+    }
+
     let html: string | undefined;
     if (templatePath) {
       const template = await fs.readFile(templatePath, 'utf-8');

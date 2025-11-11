@@ -12,22 +12,23 @@ import { AppModule } from './app.module';
 import validationOptions from './utils/validation-options';
 import { AllConfigType } from './config/config.type';
 import { ResolvePromisesInterceptor } from './utils/serializer.interceptor';
+import { raw } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     cors: true,
-    logger: false,
+    logger: ['error', 'warn', 'log'],
   });
   useContainer(app.select(AppModule), { fallbackOnErrors: true });
   const configService = app.get(ConfigService<AllConfigType>);
+  const apiPrefix = configService.getOrThrow('app.apiPrefix', { infer: true });
+
+  app.use(`/${apiPrefix}/v1/stripe/webhook`, raw({ type: 'application/json' }));
 
   app.enableShutdownHooks();
-  app.setGlobalPrefix(
-    configService.getOrThrow('app.apiPrefix', { infer: true }),
-    {
-      exclude: ['/'],
-    },
-  );
+  app.setGlobalPrefix(apiPrefix, {
+    exclude: ['/'],
+  });
   app.enableVersioning({
     type: VersioningType.URI,
   });

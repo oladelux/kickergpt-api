@@ -16,6 +16,9 @@ export class MailService {
   ) {}
 
   async userSignUp(mailData: MailData<{ hash: string }>): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
     const i18n = I18nContext.current();
     let emailConfirmTitle: MaybeType<string>;
     let text1: MaybeType<string>;
@@ -66,6 +69,9 @@ export class MailService {
   async forgotPassword(
     mailData: MailData<{ hash: string; tokenExpires: number }>,
   ): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
     const i18n = I18nContext.current();
     let resetPasswordTitle: MaybeType<string>;
     let text1: MaybeType<string>;
@@ -120,6 +126,9 @@ export class MailService {
   }
 
   async confirmNewEmail(mailData: MailData<{ hash: string }>): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
     const i18n = I18nContext.current();
     let emailConfirmTitle: MaybeType<string>;
     let text1: MaybeType<string>;
@@ -165,5 +174,9 @@ export class MailService {
         text3,
       },
     });
+  }
+
+  private isMailEnabled(): boolean {
+    return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
 }

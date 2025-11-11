@@ -18,6 +18,8 @@ import {
   ApiFootballOdds,
 } from './types/fixtures-response.type';
 import { FixtureChatsService } from './fixture-chats.service';
+import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 const DATA_REQUIREMENTS = {
   HEAD_TO_HEAD: 'HEAD_TO_HEAD',
@@ -92,6 +94,8 @@ export class FixturesAnalysisService {
     private readonly fixturesService: FixturesService,
     private readonly openAiService: OpenAiService,
     private readonly fixtureChatsService: FixtureChatsService,
+    private readonly promptUsageService: PromptUsageService,
+    private readonly subscriptionsService: SubscriptionsService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -121,6 +125,16 @@ export class FixturesAnalysisService {
       throw new NotFoundException(
         `Fixture with id ${fixtureId} was not found in API-Football.`,
       );
+    }
+
+    if (userId) {
+      const subscription =
+        await this.subscriptionsService.getSubscriptionForUser(userId);
+      await this.promptUsageService.consumePromptCredit({
+        userId,
+        plan: subscription.plan,
+        status: subscription.status,
+      });
     }
 
     const homeTeamId = fixture.teams.home.id;

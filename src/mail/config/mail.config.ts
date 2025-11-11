@@ -44,6 +44,10 @@ class EnvironmentVariablesValidator {
 
   @IsBoolean()
   MAIL_REQUIRE_TLS: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  MAIL_ENABLED: boolean;
 }
 
 export default registerAs<MailConfig>('mail', () => {
@@ -59,5 +63,9 @@ export default registerAs<MailConfig>('mail', () => {
     ignoreTLS: process.env.MAIL_IGNORE_TLS === 'true',
     secure: process.env.MAIL_SECURE === 'true',
     requireTLS: process.env.MAIL_REQUIRE_TLS === 'true',
+    enabled:
+      process.env.MAIL_ENABLED !== undefined
+        ? process.env.MAIL_ENABLED === 'true'
+        : true,
   };
 });
