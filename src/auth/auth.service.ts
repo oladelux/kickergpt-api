@@ -28,6 +28,7 @@ import { Session } from '../session/domain/session';
 import { SessionService } from '../session/session.service';
 import { StatusEnum } from '../statuses/statuses.enum';
 import { User } from '../users/domain/user';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 @Injectable()
 export class AuthService {
@@ -37,6 +38,7 @@ export class AuthService {
     private sessionService: SessionService,
     private mailService: MailService,
     private configService: ConfigService<AllConfigType>,
+    private subscriptionsService: SubscriptionsService,
   ) {}
 
   async validateLogin(loginDto: AuthEmailLoginDto): Promise<LoginResponseDto> {
@@ -113,6 +115,7 @@ export class AuthService {
     socialData: SocialInterface,
   ): Promise<LoginResponseDto> {
     let user: NullableType<User> = null;
+    let createdNewUser = false;
     const socialEmail = socialData.email?.toLowerCase();
     let userByEmail: NullableType<User> = null;
 
@@ -164,6 +167,7 @@ export class AuthService {
       });
 
       user = await this.usersService.findById(user.id);
+      createdNewUser = true;
     }
 
     if (!user) {
@@ -173,6 +177,10 @@ export class AuthService {
           user: 'userNotFound',
         },
       });
+    }
+
+    if (user && createdNewUser) {
+      await this.subscriptionsService.ensureStripeCustomerForUser(user);
     }
 
     const hash = crypto
@@ -215,6 +223,8 @@ export class AuthService {
         name: StatusEnum.inactive,
       },
     });
+
+    await this.subscriptionsService.ensureStripeCustomerForUser(user);
 
     const hash = await this.jwtService.signAsync(
       {
