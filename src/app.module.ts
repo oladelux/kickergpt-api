@@ -23,6 +23,9 @@ import { SportmonksModule } from './sportmonks/sportmonks.module';
 import apiFootballConfig from './fixtures/config/api-football.config';
 import { FixturesModule } from './fixtures/fixtures.module';
 import openAiConfig from './openai/config/openai.config';
+import stripeConfig from './stripe/config/stripe.config';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -44,6 +47,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
         sportmonksConfig,
         apiFootballConfig,
         openAiConfig,
+        stripeConfig,
       ],
       envFilePath: ['.env'],
     }),
@@ -80,6 +84,8 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     HomeModule,
     SportmonksModule,
     FixturesModule,
+    SubscriptionsModule,
+    PromptUsageModule,
   ],
 })
 export class AppModule {}

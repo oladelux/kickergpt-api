@@ -11,12 +11,16 @@ import { OpenAiModule } from '../openai/openai.module';
 import { FixtureChatEntity } from './infrastructure/persistence/relational/entities/fixture-chat.entity';
 import { FixtureChatsService } from './fixture-chats.service';
 import { FixtureChatsController } from './fixture-chats.controller';
+import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
+import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
   imports: [
     ConfigModule.forFeature(apiFootballConfig),
     TypeOrmModule.forFeature([FixtureChatEntity]),
     OpenAiModule,
+    PromptUsageModule,
+    SubscriptionsModule,
     CacheModule.register({
       ttl: 86_400,
     }),
