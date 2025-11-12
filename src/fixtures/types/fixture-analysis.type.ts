@@ -1,3 +1,5 @@
+import { buildBenchDepth, buildScheduleLoad } from '../analysis/features';
+import { buildMarketDrift } from '../analysis/market';
 import {
   ApiFootballFixture,
   ApiFootballFixtureStatisticsEntry,
@@ -43,4 +45,13 @@ export type FixtureAnalysisContext = {
     away: ApiFootballInjury[];
   };
   notes?: string[];
+  scheduleLoad?: {
+    home: ReturnType<typeof buildScheduleLoad>;
+    away: ReturnType<typeof buildScheduleLoad>;
+  };
+  benchDepth?: {
+    home: ReturnType<typeof buildBenchDepth>;
+    away: ReturnType<typeof buildBenchDepth>;
+  };
+  marketDrift?: ReturnType<typeof buildMarketDrift>;
 };
