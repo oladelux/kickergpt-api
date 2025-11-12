@@ -20,6 +20,12 @@ import {
 import { FixtureChatsService } from './fixture-chats.service';
 import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { buildBenchDepth, buildScheduleLoad } from './analysis/features';
+import {
+  buildMarketDrift,
+  inferLatestFav,
+  inferOpenFav,
+} from './analysis/market';
 
 const DATA_REQUIREMENTS = {
   HEAD_TO_HEAD: 'HEAD_TO_HEAD',
@@ -33,6 +39,14 @@ const DATA_REQUIREMENTS = {
   INJURIES: 'INJURIES',
   ODDS_HISTORY: 'ODDS_HISTORY',
   RELATIVE_STANDINGS_SPLITS: 'RELATIVE_STANDINGS_SPLITS',
+  SCHEDULE_LOAD: 'SCHEDULE_LOAD',
+  BENCH_DEPTH: 'BENCH_DEPTH',
+  REFEREE_PROFILE: 'REFEREE_PROFILE',
+  VENUE_PROFILE: 'VENUE_PROFILE',
+  WEATHER: 'WEATHER',
+  TRAVEL: 'TRAVEL',
+  NEWS_SENTIMENT: 'NEWS_SENTIMENT',
+  MARKET_DRIFT: 'MARKET_DRIFT',
 } as const;
 
 type FixtureDataRequirement =
@@ -61,6 +75,9 @@ export class FixturesAnalysisService {
     DATA_REQUIREMENTS.ODDS,
     DATA_REQUIREMENTS.ODDS_HISTORY,
     DATA_REQUIREMENTS.STATISTICS,
+    DATA_REQUIREMENTS.SCHEDULE_LOAD,
+    DATA_REQUIREMENTS.BENCH_DEPTH,
+    DATA_REQUIREMENTS.MARKET_DRIFT,
   ];
 
   private static readonly DATA_REQUIREMENT_SCHEMA: OpenAiJsonSchema = {
@@ -227,6 +244,16 @@ export class FixturesAnalysisService {
 
       if (odds?.length) {
         contextPayload.odds = odds;
+      }
+    }
+
+    if (dataRequirements.has(DATA_REQUIREMENTS.MARKET_DRIFT)) {
+      try {
+        const openFav = inferOpenFav(contextPayload.odds);
+        const latestFav = inferLatestFav(contextPayload.odds);
+        contextPayload.marketDrift = buildMarketDrift(openFav, latestFav);
+      } catch (e) {
+        contextNotes.push(`Market drift unavailable: ${(e as Error).message}`);
       }
     }
 
@@ -405,17 +432,36 @@ export class FixturesAnalysisService {
       }
     }
 
+    if (dataRequirements.has(DATA_REQUIREMENTS.SCHEDULE_LOAD)) {
+      const homeForm = contextPayload.recentForm?.home ?? [];
+      const awayForm = contextPayload.recentForm?.away ?? [];
+      contextPayload.scheduleLoad = {
+        home: buildScheduleLoad(homeForm),
+        away: buildScheduleLoad(awayForm),
+      };
+    }
+
+    if (dataRequirements.has(DATA_REQUIREMENTS.BENCH_DEPTH)) {
+      const homeInj = contextPayload.injuries?.home?.length ?? 0;
+      const awayInj = contextPayload.injuries?.away?.length ?? 0;
+      contextPayload.benchDepth = {
+        home: buildBenchDepth(20, 0, 0, homeInj),
+        away: buildBenchDepth(20, 0, 0, awayInj),
+      };
+    }
+
     if (contextNotes.length > 0) {
       contextPayload.notes = contextNotes;
     }
 
     const systemPrompt =
-      'You are MatchGPT, a football analyst that turns structured API-Football data into tailored answers. ' +
-      'Only use facts contained in the JSON context. Mention when specific data (odds, lineups, etc.) was not available. ' +
-      'When describing betting sentiment, DO NOT quote numerical odds or price ranges. Instead, state which side bookmakers favor and infer confidence levels from the odds/oddsHistory datasets, comparing to how similar spots played out in past fixtures. ' +
-      'Always include an upset watch: use oddsHistory, leagueOddsHistory, headToHead, and recentForm to cite concrete examples where the longer-priced team won or to state that no such evidence exists. ' +
-      'When standings are available, discuss how the higher-ranked team performs against opponents below them and how the lower-ranked side fares against teams above them, referencing actual fixtures from recentForm, standings, or headToHead. ' +
-      'Prioritize evidence-backed statements, keep answers under 300 words, and never invent data.';
+      'You are MatchGPT, a football analyst. Use only the JSON context. Mention missing datasets.' +
+      'Never show numeric odds or price ranges; describe market only in direction and consensus terms.' +
+      'Output exactly 3 sections:' +
+      '1) Direction & confidence (home/away/draw + low/medium/high), ' +
+      '2) Top drivers (4–6 bullets across datasets: standings, injuries, schedule, referee, weather, travel, H2H, splits, market drift), ' +
+      '3) Upset watch (concrete past fixtures from headToHead/leagueOddsHistory/oddsHistory, or say none). ' +
+      'No invented data.';
 
     const userPromptLines = [
       `User request: ${message}`,
@@ -514,6 +560,7 @@ export class FixturesAnalysisService {
       ) {
         resolvedSet.add(DATA_REQUIREMENTS.ODDS_HISTORY);
         resolvedSet.add(DATA_REQUIREMENTS.ODDS);
+        resolvedSet.add(DATA_REQUIREMENTS.MARKET_DRIFT);
       }
       // Rank-split triggers
       if (
@@ -535,6 +582,46 @@ export class FixturesAnalysisService {
       );
       return fallback;
     }
+  }
+
+  private buildFeatureSnapshot(ctx: FixtureAnalysisContext) {
+    try {
+      const home = this.scoreSide(ctx, 'home');
+      const away = this.scoreSide(ctx, 'away');
+      return { home, away };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private scoreSide(ctx: FixtureAnalysisContext, side: 'home' | 'away') {
+    const inv = (x?: number) => (typeof x === 'number' ? x : 0.5);
+    const injLen =
+      side === 'home'
+        ? (ctx.injuries?.home?.length ?? 0)
+        : (ctx.injuries?.away?.length ?? 0);
+    const sched =
+      side === 'home'
+        ? (ctx as any).scheduleLoad?.home?.fixtureDensityIndex
+        : (ctx as any).scheduleLoad?.away?.fixtureDensityIndex;
+    const depth =
+      side === 'home'
+        ? (ctx as any).benchDepth?.home?.rotationHealth
+        : (ctx as any).benchDepth?.away?.rotationHealth;
+    const marketFav = (ctx as any).marketDrift?.latestFav;
+    return {
+      availability: 1 - Math.min(1, injLen / 6),
+      scheduleLoad: inv(sched),
+      benchDepth: inv(depth),
+      tacticsFit: 0.5,
+      venueConditions: 0.5,
+      psychology: 0.5,
+      marketSignal: marketFav ? (marketFav === side ? 0.7 : 0.3) : 0.5,
+      refereeFit: 0.5,
+      formQuality: 0.5,
+      h2hEdge: 0.5,
+      relativeSplits: 0.5,
+    };
   }
 
   private async safeFetch<T>(
