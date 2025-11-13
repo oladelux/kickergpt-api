@@ -12,6 +12,10 @@ import { OpenAiService, OpenAiJsonSchema } from '../openai/openai.service';
 import {
   FixtureAnalysis,
   FixtureAnalysisContext,
+  GameDayTimeAnalysis,
+  GameDayTimePerspective,
+  GameDayTimeSplit,
+  GameDayTimeReference,
 } from './types/fixture-analysis.type';
 import {
   ApiFootballFixture,
@@ -47,10 +51,25 @@ const DATA_REQUIREMENTS = {
   TRAVEL: 'TRAVEL',
   NEWS_SENTIMENT: 'NEWS_SENTIMENT',
   MARKET_DRIFT: 'MARKET_DRIFT',
+  //Defined by me
+  GAME_DAY_TIME_ANALYSIS: 'GAME_DAY_TIME_ANALYSIS',
 } as const;
 
 type FixtureDataRequirement =
   (typeof DATA_REQUIREMENTS)[keyof typeof DATA_REQUIREMENTS];
+
+type FixtureTemporalSnapshot = {
+  weekday: number;
+  hour: number;
+  minute: number;
+  month: number;
+  day: number;
+};
+
+type FixtureTemporalRecord = {
+  fixture: ApiFootballFixture;
+  temporal: FixtureTemporalSnapshot;
+};
 
 @Injectable()
 export class FixturesAnalysisService {
@@ -78,7 +97,17 @@ export class FixturesAnalysisService {
     DATA_REQUIREMENTS.SCHEDULE_LOAD,
     DATA_REQUIREMENTS.BENCH_DEPTH,
     DATA_REQUIREMENTS.MARKET_DRIFT,
+    DATA_REQUIREMENTS.GAME_DAY_TIME_ANALYSIS,
   ];
+  private static readonly WEEKDAY_LABELS = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ] as const;
 
   private static readonly DATA_REQUIREMENT_SCHEMA: OpenAiJsonSchema = {
     name: 'fixture_analysis_requirements',
@@ -143,6 +172,24 @@ export class FixturesAnalysisService {
         `Fixture with id ${fixtureId} was not found in API-Football.`,
       );
     }
+
+    const h2h = await this.fixturesService.getHeadToHead(
+      fixture.teams.home.id,
+      fixture.teams.away.id,
+      fixture.league?.id,
+    );
+    const currentHomeTeamMatchesInSeason =
+      await this.fixturesService.getTeamSeasonFixtures({
+        teamId: fixture.teams.home.id,
+        leagueId: fixture.league.id,
+        season: fixture.league.season,
+      });
+    const currentAwayTeamMatchesInSeason =
+      await this.fixturesService.getTeamSeasonFixtures({
+        teamId: fixture.teams.away.id,
+        leagueId: fixture.league.id,
+        season: fixture.league.season,
+      });
 
     if (userId) {
       const subscription =
@@ -402,6 +449,37 @@ export class FixturesAnalysisService {
       }
     }
 
+    if (dataRequirements.has(DATA_REQUIREMENTS.GAME_DAY_TIME_ANALYSIS)) {
+      const reference = this.buildFixtureTemporalReference(
+        fixture.fixture?.date,
+        fixture.fixture?.timezone,
+      );
+
+      if (!reference) {
+        contextNotes.push(
+          'Unable to derive kickoff time for game-day analysis.',
+        );
+      } else {
+        const gameDayTimeAnalysis = this.buildGameDayTimeAnalysis({
+          reference,
+          headToHead: h2h,
+          homeSeasonFixtures: currentHomeTeamMatchesInSeason,
+          awaySeasonFixtures: currentAwayTeamMatchesInSeason,
+          homeTeamId,
+          awayTeamId,
+          currentFixtureId: fixtureId,
+        });
+
+        if (gameDayTimeAnalysis) {
+          contextPayload.gameDayTimeAnalysis = gameDayTimeAnalysis;
+        } else {
+          contextNotes.push(
+            'No completed fixtures match the current kickoff window for game-day analysis.',
+          );
+        }
+      }
+    }
+
     // RELATIVE STANDINGS SPLITS (vs above / vs below)
     if (dataRequirements.has(DATA_REQUIREMENTS.RELATIVE_STANDINGS_SPLITS)) {
       try {
@@ -455,12 +533,14 @@ export class FixturesAnalysisService {
     }
 
     const systemPrompt =
-      'You are MatchGPT, a football analyst. Use only the JSON context. Mention missing datasets.' +
-      'Never show numeric odds or price ranges; describe market only in direction and consensus terms.' +
-      'Output exactly 3 sections:' +
-      '1) Direction & confidence (home/away/draw + low/medium/high), ' +
-      '2) Top drivers (4–6 bullets across datasets: standings, injuries, schedule, referee, weather, travel, H2H, splits, market drift), ' +
-      '3) Upset watch (concrete past fixtures from headToHead/leagueOddsHistory/oddsHistory, or say none). ' +
+      'You are MatchGPT, a football analyst. Use only the JSON context. Mention missing datasets. ' +
+      'Never show numeric odds or price ranges; describe market only in direction and consensus terms. ' +
+      'Respond in natural prose or Markdown—never JSON. ' +
+      'Output the sections below in order (omit a section only when instructed to do so). ' +
+      '1) Direction & confidence: state home/away/draw and low/medium/high confidence, and justify both with context data (never bookmakers). ' +
+      '2) Top drivers: give 4–6 bullet points citing concrete datasets such as standings, injuries, schedule load, referee, weather, travel, H2H, splits, market drift, etc., each with a short reason. ' +
+      "3) Upset watch: cite past fixtures from headToHead/leagueOddsHistory/oddsHistory where an underdog beat expectation; if nothing applies say 'Upset watch: none'. " +
+      '4) Game time analysis: include only if gameDayTimeAnalysis exists; relate kickoff timing trends for both teams and mention it inside the Direction & confidence narrative as well. ' +
       'No invented data.';
 
     const userPromptLines = [
@@ -525,6 +605,7 @@ export class FixturesAnalysisService {
       '\n- PLAYER_STATS: Use for player-level performances within the fixture.' +
       '\n- INJURIES: Use for availability, injury lists, or fitness doubts.' +
       '\n- RELATIVE_STANDINGS_SPLITS: Use when the user asks about performance vs higher/lower ranked teams.' +
+      '\n- GAME_DAY_TIME_ANALYSIS: Use for game day time analysis, or game day time sentiment. also add this when giving a summary analysis of the match.' +
       '\nReturn only the identifiers.';
 
     try {
@@ -666,7 +747,7 @@ export class FixturesAnalysisService {
     for (const season of seasons) {
       const fixtures = await this.safeFetch(
         () =>
-          this.fixturesService.getTeamFixtures({
+          this.fixturesService.getTeamSeasonFixtures({
             teamId,
             leagueId,
             season,
@@ -836,6 +917,318 @@ export class FixturesAnalysisService {
       );
       return undefined;
     }
+  }
+
+  private buildGameDayTimeAnalysis(params: {
+    reference: GameDayTimeReference;
+    headToHead?: ApiFootballFixture[];
+    homeSeasonFixtures?: ApiFootballFixture[];
+    awaySeasonFixtures?: ApiFootballFixture[];
+    homeTeamId: number;
+    awayTeamId: number;
+    currentFixtureId: number;
+  }): GameDayTimeAnalysis | undefined {
+    const analysis: GameDayTimeAnalysis = {
+      reference: params.reference,
+    };
+
+    const headToHeadHome = this.buildGameDayTimePerspective(
+      params.headToHead,
+      params.homeTeamId,
+      params.reference,
+      params.currentFixtureId,
+    );
+    const headToHeadAway = this.buildGameDayTimePerspective(
+      params.headToHead,
+      params.awayTeamId,
+      params.reference,
+      params.currentFixtureId,
+    );
+
+    if (headToHeadHome || headToHeadAway) {
+      analysis.headToHead = {};
+      if (headToHeadHome) {
+        analysis.headToHead.home = headToHeadHome;
+      }
+      if (headToHeadAway) {
+        analysis.headToHead.away = headToHeadAway;
+      }
+    }
+
+    const homeTeamPerspective = this.buildGameDayTimePerspective(
+      params.homeSeasonFixtures,
+      params.homeTeamId,
+      params.reference,
+      params.currentFixtureId,
+    );
+    if (homeTeamPerspective) {
+      analysis.homeTeam = homeTeamPerspective;
+    }
+
+    const awayTeamPerspective = this.buildGameDayTimePerspective(
+      params.awaySeasonFixtures,
+      params.awayTeamId,
+      params.reference,
+      params.currentFixtureId,
+    );
+    if (awayTeamPerspective) {
+      analysis.awayTeam = awayTeamPerspective;
+    }
+
+    if (!analysis.headToHead && !analysis.homeTeam && !analysis.awayTeam) {
+      return undefined;
+    }
+
+    return analysis;
+  }
+
+  private buildGameDayTimePerspective(
+    fixtures: ApiFootballFixture[] | undefined,
+    teamId: number,
+    reference: GameDayTimeReference,
+    currentFixtureId: number,
+  ): GameDayTimePerspective | undefined {
+    if (!fixtures?.length) {
+      return undefined;
+    }
+
+    const completed = this.filterCompletedFixtures(fixtures);
+    if (!completed?.length) {
+      return undefined;
+    }
+
+    const records: FixtureTemporalRecord[] = [];
+    for (const fx of completed) {
+      if (fx.fixture?.id === currentFixtureId) {
+        continue;
+      }
+
+      const temporal = this.extractTemporalParts(
+        fx.fixture?.date,
+        reference.timezone,
+      );
+      if (!temporal) {
+        continue;
+      }
+
+      records.push({ fixture: fx, temporal });
+    }
+
+    if (!records.length) {
+      return undefined;
+    }
+
+    const perspective: GameDayTimePerspective = {};
+
+    const sameWeekday = this.aggregateTemporalSplit(
+      records.filter((record) => record.temporal.weekday === reference.weekday),
+      teamId,
+    );
+    if (sameWeekday) {
+      perspective.sameWeekday = sameWeekday;
+    }
+
+    const sameHour = this.aggregateTemporalSplit(
+      records.filter((record) => record.temporal.hour === reference.hour),
+      teamId,
+    );
+    if (sameHour) {
+      perspective.sameKickoffHour = sameHour;
+    }
+
+    const sameWeekdayAndHour = this.aggregateTemporalSplit(
+      records.filter(
+        (record) =>
+          record.temporal.weekday === reference.weekday &&
+          record.temporal.hour === reference.hour,
+      ),
+      teamId,
+    );
+    if (sameWeekdayAndHour) {
+      perspective.sameWeekdayAndHour = sameWeekdayAndHour;
+    }
+
+    const sameMonthDay = this.aggregateTemporalSplit(
+      records.filter(
+        (record) =>
+          record.temporal.month === reference.month &&
+          record.temporal.day === reference.day,
+      ),
+      teamId,
+    );
+    if (sameMonthDay) {
+      perspective.sameMonthDay = sameMonthDay;
+    }
+
+    return Object.keys(perspective).length ? perspective : undefined;
+  }
+
+  private aggregateTemporalSplit(
+    records: FixtureTemporalRecord[],
+    teamId: number,
+  ): GameDayTimeSplit | undefined {
+    if (!records.length) {
+      return undefined;
+    }
+
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+
+    for (const record of records) {
+      const outcome = this.getTeamOutcome(record.fixture, teamId);
+      if (!outcome) {
+        continue;
+      }
+
+      if (outcome === 'win') {
+        wins += 1;
+      } else if (outcome === 'draw') {
+        draws += 1;
+      } else {
+        losses += 1;
+      }
+    }
+
+    const sample = wins + draws + losses;
+    if (!sample) {
+      return undefined;
+    }
+
+    return { wins, draws, losses, sample };
+  }
+
+  private getTeamOutcome(
+    fixture: ApiFootballFixture,
+    teamId: number,
+  ): 'win' | 'draw' | 'loss' | undefined {
+    const homeId = fixture.teams?.home?.id;
+    const awayId = fixture.teams?.away?.id;
+    if (homeId !== teamId && awayId !== teamId) {
+      return undefined;
+    }
+
+    const homeGoals = fixture.goals?.home;
+    const awayGoals = fixture.goals?.away;
+    if (homeGoals == null || awayGoals == null) {
+      return undefined;
+    }
+
+    if (homeGoals === awayGoals) {
+      return 'draw';
+    }
+
+    const isHomeTeam = homeId === teamId;
+    const teamWon = isHomeTeam ? homeGoals > awayGoals : awayGoals > homeGoals;
+
+    return teamWon ? 'win' : 'loss';
+  }
+
+  private buildFixtureTemporalReference(
+    dateIso?: string,
+    timezone?: string,
+  ): GameDayTimeReference | undefined {
+    if (!dateIso) {
+      return undefined;
+    }
+
+    const temporal = this.extractTemporalParts(dateIso, timezone);
+    if (!temporal) {
+      return undefined;
+    }
+
+    const hourLabel = `${String(temporal.hour).padStart(2, '0')}:${String(
+      temporal.minute,
+    ).padStart(2, '0')}`;
+    const dateLabel = `${String(temporal.month).padStart(2, '0')}-${String(
+      temporal.day,
+    ).padStart(2, '0')}`;
+    const weekdayLabel =
+      FixturesAnalysisService.WEEKDAY_LABELS[temporal.weekday] ??
+      `Day ${temporal.weekday}`;
+
+    return {
+      isoDate: dateIso,
+      timezone: timezone ?? 'UTC',
+      weekday: temporal.weekday,
+      weekdayLabel,
+      hour: temporal.hour,
+      minute: temporal.minute,
+      hourLabel,
+      month: temporal.month,
+      day: temporal.day,
+      dateLabel,
+    };
+  }
+
+  private extractTemporalParts(
+    isoDate?: string,
+    timezone?: string,
+  ): FixtureTemporalSnapshot | undefined {
+    if (!isoDate) {
+      return undefined;
+    }
+
+    const parsedDate = new Date(isoDate);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return undefined;
+    }
+
+    try {
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone ?? 'UTC',
+        weekday: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        hour12: false,
+      });
+
+      const parts = formatter.formatToParts(parsedDate);
+      const lookup = (type: string) =>
+        parts.find((part) => part.type === type)?.value;
+
+      const weekday = this.getWeekdayIndex(lookup('weekday'));
+      const hour = Number(lookup('hour'));
+      const minute = Number(lookup('minute'));
+      const month = Number(lookup('month'));
+      const day = Number(lookup('day'));
+
+      if (
+        weekday == null ||
+        Number.isNaN(hour) ||
+        Number.isNaN(minute) ||
+        Number.isNaN(month) ||
+        Number.isNaN(day)
+      ) {
+        return undefined;
+      }
+
+      return {
+        weekday,
+        hour,
+        minute,
+        month,
+        day,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to derive temporal snapshot: ${(error as Error).message}`,
+      );
+      return undefined;
+    }
+  }
+
+  private getWeekdayIndex(label?: string): number | undefined {
+    if (!label) {
+      return undefined;
+    }
+
+    const normalized = label.trim().slice(0, 3).toLowerCase();
+    const lookup = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const index = lookup.indexOf(normalized);
+    return index === -1 ? undefined : index;
   }
 
   private buildCacheKey(

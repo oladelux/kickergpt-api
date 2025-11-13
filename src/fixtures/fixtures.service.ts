@@ -151,14 +151,17 @@ export class FixturesService {
   }
 
   async getHeadToHead(
-    homeTeamId: number,
-    awayTeamId: number,
-    limit = 5,
+    homeTeamId?: number,
+    awayTeamId?: number,
+    leagueId?: number,
   ): Promise<ApiFootballFixture[]> {
+    if (!homeTeamId || !awayTeamId) {
+      return [];
+    }
     return this.getHeadToHeadFixtures({
       homeTeamId,
       awayTeamId,
-      last: limit,
+      leagueId,
     });
   }
 
@@ -294,7 +297,7 @@ export class FixturesService {
     return result.response;
   }
 
-  async getTeamFixtures(
+  async getTeamSeasonFixtures(
     query: TeamFixturesQuery,
   ): Promise<ApiFootballFixture[]> {
     const { teamId, leagueId, season, ...rest } = query;
