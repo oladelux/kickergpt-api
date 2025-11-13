@@ -54,4 +54,42 @@ export type FixtureAnalysisContext = {
     away: ReturnType<typeof buildBenchDepth>;
   };
   marketDrift?: ReturnType<typeof buildMarketDrift>;
+  gameDayTimeAnalysis?: GameDayTimeAnalysis;
+};
+
+export type GameDayTimeReference = {
+  isoDate: string;
+  timezone: string;
+  weekday: number;
+  weekdayLabel: string;
+  hour: number;
+  minute: number;
+  hourLabel: string;
+  month: number;
+  day: number;
+  dateLabel: string;
+};
+
+export type GameDayTimeSplit = {
+  wins: number;
+  draws: number;
+  losses: number;
+  sample: number;
+};
+
+export type GameDayTimePerspective = {
+  sameWeekday?: GameDayTimeSplit;
+  sameKickoffHour?: GameDayTimeSplit;
+  sameWeekdayAndHour?: GameDayTimeSplit;
+  sameMonthDay?: GameDayTimeSplit;
+};
+
+export type GameDayTimeAnalysis = {
+  reference: GameDayTimeReference;
+  headToHead?: {
+    home?: GameDayTimePerspective;
+    away?: GameDayTimePerspective;
+  };
+  homeTeam?: GameDayTimePerspective;
+  awayTeam?: GameDayTimePerspective;
 };
