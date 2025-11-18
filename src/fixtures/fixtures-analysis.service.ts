@@ -243,7 +243,7 @@ export class FixturesAnalysisService {
           () =>
             this.fixturesService.getRecentFixturesByTeam(
               homeTeamId,
-              FixturesAnalysisService.RECENT_FORM_LIMIT,
+              fixture.league?.id,
             ),
           contextNotes,
           'Home team form unavailable.',
@@ -252,7 +252,7 @@ export class FixturesAnalysisService {
           () =>
             this.fixturesService.getRecentFixturesByTeam(
               awayTeamId,
-              FixturesAnalysisService.RECENT_FORM_LIMIT,
+              fixture.league?.id,
             ),
           contextNotes,
           'Away team form unavailable.',
