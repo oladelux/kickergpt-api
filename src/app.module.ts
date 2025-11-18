@@ -24,6 +24,7 @@ import apiFootballConfig from './fixtures/config/api-football.config';
 import { FixturesModule } from './fixtures/fixtures.module';
 import openAiConfig from './openai/config/openai.config';
 import stripeConfig from './stripe/config/stripe.config';
+import weatherConfig from './weather/config/weather.config';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
 
@@ -48,6 +49,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
         apiFootballConfig,
         openAiConfig,
         stripeConfig,
+        weatherConfig,
       ],
       envFilePath: ['.env'],
     }),

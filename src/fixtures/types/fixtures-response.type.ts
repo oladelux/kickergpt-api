@@ -6,6 +6,7 @@ export type ApiFootballFixturePeriods = {
 export type ApiFootballFixtureVenue = {
   id: number | null;
   name: string | null;
+  address: string | null;
   city: string | null;
 };
 
@@ -90,6 +91,31 @@ export type ApiFootballApiResponse<TResponse> = {
 
 export type ApiFootballFixturesResponse = ApiFootballApiResponse<
   ApiFootballFixture[]
+>;
+
+export type ApiFootballTeamDetails = {
+  team: {
+    id: number;
+    name: string;
+    code: string | null;
+    country: string | null;
+    founded: number | null;
+    national: boolean | null;
+    logo: string | null;
+  };
+  venue: {
+    id: number | null;
+    name: string | null;
+    address: string | null;
+    city: string | null;
+    capacity: number | null;
+    surface: string | null;
+    image: string | null;
+  };
+};
+
+export type ApiFootballTeamsResponse = ApiFootballApiResponse<
+  ApiFootballTeamDetails[]
 >;
 
 export type ApiFootballFixtureStatisticsValue = {
@@ -232,6 +258,7 @@ export type ApiFootballInjury = {
   player: {
     id: number | null;
     name: string | null;
+    reason: string | null;
   };
   team: ApiFootballTeam;
   fixture: ApiFootballFixtureDetails | null;
@@ -270,3 +297,60 @@ export type ApiFootballSidelinedRecord = {
 export type ApiFootballSidelinedResponse = ApiFootballApiResponse<
   ApiFootballSidelinedRecord[]
 >;
+
+export type KickerGPTFixturesResponse = {
+  id: number;
+  timezone: string;
+  date: string;
+  timestamp: number;
+  periods: ApiFootballFixturePeriods;
+  status: ApiFootballFixtureStatus;
+  league: ApiFootballLeague;
+  teams: ApiFootballTeams;
+  venue: ApiFootballFixtureVenue;
+  derby: boolean;
+  matchType: string;
+  homeOdd: string | undefined;
+  awayOdd: string | undefined;
+  weatherSummary: string;
+  referee: string;
+  h2h: KickerGPTMatchSummary[];
+  homeInjuries: KickerGPTInjuryPlayerFlag[];
+  awayInjuries: KickerGPTInjuryPlayerFlag[];
+  lastHomeMatches: KickerGPTMatchSummary[];
+  lastAwayMatches: KickerGPTMatchSummary[];
+  homeNews: KickerGPTNewsItemSummary[];
+  awayNews: KickerGPTNewsItemSummary[];
+};
+
+export type KickerGPTMatchSummary = {
+  id: number;
+  date: string;
+  timestamp: number;
+  league: ApiFootballLeague;
+  teams: ApiFootballTeams;
+  venue: ApiFootballFixtureVenue;
+  status: ApiFootballFixtureStatus;
+  goals: ApiFootballGoals;
+  derby: boolean;
+  weatherSummary: string;
+  referee: string;
+};
+
+export type KickerGPTNewsItemSummary = {
+  id: string;
+  title: string;
+  source: string;
+  publishedAt: string;
+  sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+  tag?: 'MANAGER' | 'INJURY' | 'TRANSFER' | 'BOARD' | 'FANS' | 'OTHER';
+};
+
+export type KickerGPTInjuryPlayerFlag = {
+  playerId: number | null;
+  name: string | null;
+  position?: string;
+  reason: string | null;
+  date?: string | null;
+  expectedReturnDate?: string;
+};
