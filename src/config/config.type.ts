@@ -8,6 +8,7 @@ import { ApiFootballConfig } from '../fixtures/config/api-football-config.type';
 import { OpenAiConfig } from '../openai/config/openai-config.type';
 import { StripeConfig } from '../stripe/config/stripe-config.type';
 import { WeatherConfig } from '../weather/config/weather-config.type';
+import { RedisConfig } from '../redis/config/redis-config.type';
 
 export type AllConfigType = {
   app: AppConfig;
@@ -20,4 +21,5 @@ export type AllConfigType = {
   openAi: OpenAiConfig;
   stripe: StripeConfig;
   weather?: WeatherConfig;
+  redis: RedisConfig;
 };

@@ -3,6 +3,7 @@ import {
   HttpStatus,
   Injectable,
   InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { request as httpsRequest } from 'node:https';
@@ -10,6 +11,7 @@ import { URL } from 'node:url';
 import { AllConfigType } from '../config/config.type';
 import { ApiFootballConfig } from './config/api-football-config.type';
 import { WeatherConfig } from '../weather/config/weather-config.type';
+import { RedisService } from '../redis/redis.service';
 import {
   ApiFootballFixture,
   ApiFootballFixtureDetails,
@@ -125,13 +127,19 @@ type WeatherTimelineResponse = {
 export class FixturesService {
   private readonly apiToken: string;
   private readonly baseUrl: string;
+  private readonly apiRequestIntervalMs: number;
   private readonly weatherApiKey?: string;
   private readonly weatherBaseUrl?: string;
   private readonly weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
   private readonly teamDetailsCache = new Map<number, ApiFootballTeamDetails>();
   private readonly weatherSummaryCache = new Map<string, string | null>();
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 6;
+  private apiRequestQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly configService: ConfigService<AllConfigType>) {
+  constructor(
+    private readonly configService: ConfigService<AllConfigType>,
+    private readonly redisService: RedisService,
+  ) {
     const apiFootballConfig = this.configService.getOrThrow<ApiFootballConfig>(
       'apiFootball',
       {
@@ -141,6 +149,7 @@ export class FixturesService {
 
     this.apiToken = apiFootballConfig.apiToken;
     this.baseUrl = apiFootballConfig.baseUrl.replace(/\/$/, '');
+    this.apiRequestIntervalMs = apiFootballConfig.minRequestIntervalMs;
 
     const weatherConfig =
       this.configService.get<WeatherConfig>('weather', {
@@ -158,152 +167,26 @@ export class FixturesService {
     return this.getFixturesByDate(this.getToday());
   }
 
-  async getSelectedMatches(
-    league: number,
-    season: number,
-    date: string,
-  ): Promise<KickerGPTFixturesResponse[]> {
-    const result = await this.getFixturesByDateLeagueSeason(
-      date,
-      league,
-      season,
-    );
-    const fixturesResponses = await Promise.all(
-      result.response.map(
-        async (
-          apiFixture: ApiFootballFixture,
-        ): Promise<KickerGPTFixturesResponse> => {
-          const { fixture, league, teams } = apiFixture;
-          const h2hResults = await this.getHeadToHeadFixtures({
-            homeTeamId: teams.home.id,
-            awayTeamId: teams.away.id,
-          });
-          const homeInjuryResults = await this.getInjuries({
-            season: season,
-            teamId: teams.home.id,
-          });
-
-          const awayInjuryResults = await this.getInjuries({
-            season: season,
-            teamId: teams.away.id,
-          });
-
-          const h2h: KickerGPTMatchSummary[] = await Promise.all(
-            h2hResults.map(async (result) => {
-              const { fixture, league, teams, goals } = result;
-              const weatherSummary =
-                (await this.getWeatherSummaryForFixture(fixture)) ??
-                'Conditions unavailable';
-
-              return {
-                id: fixture.id,
-                date: fixture.date,
-                timestamp: fixture.timestamp,
-                league,
-                teams,
-                venue: fixture.venue,
-                status: fixture.status,
-                goals,
-                derby: true,
-                weatherSummary,
-                referee: fixture.referee ?? '',
-              };
-            }),
-          );
-
-          const homeInjuries: KickerGPTInjuryPlayerFlag[] =
-            this.getLatestInjuriesByPlayer(homeInjuryResults).map((result) => {
-              const { player } = result;
-              return {
-                playerId: player.id,
-                name: player.name,
-                reason: result.reason,
-                date: result.fixture?.date,
-              };
-            });
-
-          const awayInjuries: KickerGPTInjuryPlayerFlag[] =
-            this.getLatestInjuriesByPlayer(awayInjuryResults).map((result) => {
-              const { player } = result;
-
-              return {
-                playerId: player.id,
-                name: player.name,
-                reason: result.reason,
-                date: result.fixture?.date,
-              };
-            });
-
-          const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
-            teams.home.id,
-            league.id,
-          );
-
-          const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
-            teams.away.id,
-            league.id,
-          );
-
-          const [homeTeamDetails, awayTeamDetails] = await Promise.all([
-            this.getTeamDetails(teams.home.id),
-            this.getTeamDetails(teams.away.id),
-          ]);
-
-          const isDerby = this.isDerbyMatch(homeTeamDetails, awayTeamDetails);
-
-          const fixtureWeatherSummary =
-            (await this.getWeatherSummaryForFixture(fixture)) ??
-            'Conditions unavailable';
-
-          const lastHomeMatches = await this.buildMatchSummaries(
-            lastHomeMatchesResults,
-          );
-
-          const lastAwayMatches = await this.buildMatchSummaries(
-            lastAwayMatchesResults,
-          );
-
-          const oddsResult = await this.getFixtureOdds({
-            fixtureId: fixture.id,
-            betId: 1,
-          });
-
-          const homeOdd = oddsResult.find(
-            (odd) => odd.fixture.id === fixture.id,
-          )?.bookmakers[0].bets[0].values[0].odd;
-
-          const awayOdd = oddsResult.find(
-            (odd) => odd.fixture.id === fixture.id,
-          )?.bookmakers[0].bets[0].values[2].odd;
-
-          return {
-            id: fixture.id,
-            timezone: fixture.timezone,
-            date: fixture.date,
-            timestamp: fixture.timestamp,
-            periods: fixture.periods,
-            status: fixture.status,
-            league,
-            teams,
-            venue: fixture.venue,
-            derby: isDerby,
-            matchType: 'league',
-            homeOdd,
-            awayOdd,
-            weatherSummary: fixtureWeatherSummary,
-            referee: fixture.referee ?? '',
-            h2h,
-            homeInjuries,
-            awayInjuries,
-            lastHomeMatches,
-            lastAwayMatches,
-            homeNews: [],
-            awayNews: [],
-          };
-        },
-      ),
+  async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
+    const fixturesResponses = await this.buildTodayFixturesResponse();
+    await this.redisService.set(
+      this.buildFixturesCacheKey(),
+      fixturesResponses,
+      this.fixturesCacheTtlSeconds,
     );
     return fixturesResponses;
+  }
+
+  async getSelectedMatches(): Promise<KickerGPTFixturesResponse[]> {
+    const cacheKey = this.buildFixturesCacheKey();
+    const cached =
+      await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
+    if (!cached) {
+      throw new ServiceUnavailableException(
+        'Fixtures cache is not available yet. Please try again shortly.',
+      );
+    }
+    return cached;
   }
 
   async getFixtureById(
@@ -599,6 +482,158 @@ export class FixturesService {
     return normalized.length > 0 ? normalized : null;
   }
 
+  private async buildTodayFixturesResponse(): Promise<
+    KickerGPTFixturesResponse[]
+  > {
+    const result = await this.getFixturesByDate('2025-11-21');
+
+    const allowedLeagues = new Set([
+      39, 40, 41, 42, 61, 62, 78, 79, 88, 89, 135, 136, 140, 141, 203,
+    ]);
+    const filteredFixtures = result.response.filter((fixture) =>
+      allowedLeagues.has(fixture.league.id),
+    );
+
+    return Promise.all(
+      filteredFixtures.map(
+        async (
+          apiFixture: ApiFootballFixture,
+        ): Promise<KickerGPTFixturesResponse> => {
+          const { fixture, league, teams } = apiFixture;
+          const season = league.season;
+
+          const h2hResults = await this.getHeadToHeadFixtures({
+            homeTeamId: teams.home.id,
+            awayTeamId: teams.away.id,
+          });
+
+          const homeInjuryResults = await this.getInjuries({
+            season,
+            teamId: teams.home.id,
+          });
+
+          const awayInjuryResults = await this.getInjuries({
+            season,
+            teamId: teams.away.id,
+          });
+
+          const h2h: KickerGPTMatchSummary[] = await Promise.all(
+            h2hResults.map(async (result) => {
+              const { fixture, league, teams, goals } = result;
+              const weatherSummary =
+                (await this.getWeatherSummaryForFixture(fixture)) ??
+                'Conditions unavailable';
+
+              return {
+                id: fixture.id,
+                date: fixture.date,
+                timestamp: fixture.timestamp,
+                league,
+                teams,
+                venue: fixture.venue,
+                status: fixture.status,
+                goals,
+                derby: true,
+                weatherSummary,
+                referee: fixture.referee ?? '',
+              };
+            }),
+          );
+
+          const homeInjuries: KickerGPTInjuryPlayerFlag[] =
+            this.getLatestInjuriesByPlayer(homeInjuryResults).map((result) => {
+              const { player } = result;
+              return {
+                playerId: player.id,
+                name: player.name,
+                reason: result.reason,
+                date: result.fixture?.date,
+              };
+            });
+
+          const awayInjuries: KickerGPTInjuryPlayerFlag[] =
+            this.getLatestInjuriesByPlayer(awayInjuryResults).map((result) => {
+              const { player } = result;
+
+              return {
+                playerId: player.id,
+                name: player.name,
+                reason: result.reason,
+                date: result.fixture?.date,
+              };
+            });
+
+          const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
+            teams.home.id,
+            league.id,
+          );
+
+          const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
+            teams.away.id,
+            league.id,
+          );
+
+          const [homeTeamDetails, awayTeamDetails] = await Promise.all([
+            this.getTeamDetails(teams.home.id),
+            this.getTeamDetails(teams.away.id),
+          ]);
+
+          const isDerby = this.isDerbyMatch(homeTeamDetails, awayTeamDetails);
+
+          const fixtureWeatherSummary =
+            (await this.getWeatherSummaryForFixture(fixture)) ??
+            'Conditions unavailable';
+
+          const lastHomeMatches = await this.buildMatchSummaries(
+            lastHomeMatchesResults,
+          );
+
+          const lastAwayMatches = await this.buildMatchSummaries(
+            lastAwayMatchesResults,
+          );
+
+          const oddsResult = await this.getFixtureOdds({
+            fixtureId: fixture.id,
+            betId: 1,
+          });
+
+          const homeOdd = oddsResult.find(
+            (odd) => odd.fixture.id === fixture.id,
+          )?.bookmakers[0].bets[0].values[0].odd;
+
+          const awayOdd = oddsResult.find(
+            (odd) => odd.fixture.id === fixture.id,
+          )?.bookmakers[0].bets[0].values[2].odd;
+
+          return {
+            id: fixture.id,
+            timezone: fixture.timezone,
+            date: fixture.date,
+            timestamp: fixture.timestamp,
+            periods: fixture.periods,
+            status: fixture.status,
+            league,
+            teams,
+            venue: fixture.venue,
+            derby: isDerby,
+            matchType: 'league',
+            homeOdd,
+            awayOdd,
+            weatherSummary: fixtureWeatherSummary,
+            referee: fixture.referee ?? '',
+            h2h,
+            homeInjuries,
+            awayInjuries,
+            lastHomeMatches,
+            lastAwayMatches,
+            homeNews: [],
+            awayNews: [],
+          };
+        },
+      ),
+    );
+  }
+
   private async getWeatherSummaryForFixture(
     fixture: ApiFootballFixtureDetails,
   ): Promise<string | null> {
@@ -821,13 +856,15 @@ export class FixturesService {
       url.searchParams.set(key, String(value));
     });
 
-    return this.requestJson<T>(
-      url,
-      {
-        Accept: 'application/json',
-        'x-apisports-key': this.apiToken,
-      },
-      'API-Football request failed.',
+    return this.scheduleApiFootballRequest(() =>
+      this.requestJson<T>(
+        url,
+        {
+          Accept: 'application/json',
+          'x-apisports-key': this.apiToken,
+        },
+        'API-Football request failed.',
+      ),
     );
   }
 
@@ -836,6 +873,29 @@ export class FixturesService {
       return undefined;
     }
     return ids.join('-');
+  }
+
+  private scheduleApiFootballRequest<T>(
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const execution = this.apiRequestQueue.then(callback);
+    this.apiRequestQueue = execution
+      .catch(() => undefined)
+      .then(() => this.delay(this.apiRequestIntervalMs));
+    return execution;
+  }
+
+  private delay(ms: number): Promise<void> {
+    if (!ms || ms <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  private buildFixturesCacheKey(): string {
+    return `fixtures:${this.getToday()}`;
   }
 
   private async requestJson<T>(

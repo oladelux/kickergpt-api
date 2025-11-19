@@ -13,6 +13,8 @@ import { FixtureChatsService } from './fixture-chats.service';
 import { FixtureChatsController } from './fixture-chats.controller';
 import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { RedisModule } from '../redis/redis.module';
+import { FixturesCacheScheduler } from './fixtures-cache.scheduler';
 
 @Module({
   imports: [
@@ -21,6 +23,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     OpenAiModule,
     PromptUsageModule,
     SubscriptionsModule,
+    RedisModule,
     CacheModule.register({
       ttl: 86_400,
     }),
@@ -30,6 +33,11 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     FixturesAnalysisController,
     FixtureChatsController,
   ],
-  providers: [FixturesService, FixturesAnalysisService, FixtureChatsService],
+  providers: [
+    FixturesService,
+    FixturesAnalysisService,
+    FixtureChatsService,
+    FixturesCacheScheduler,
+  ],
 })
 export class FixturesModule {}
