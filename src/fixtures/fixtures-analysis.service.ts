@@ -543,8 +543,8 @@ export class FixturesAnalysisService {
   private async getCachedFixtureSnapshot(
     fixtureId: number,
   ): Promise<KickerGPTFixturesResponse | undefined> {
-    const fixtures = await this.fixturesService.getSelectedMatches();
-    return fixtures.find((candidate) => candidate.id === fixtureId);
+    const fixtures = await this.fixturesService.getSelectedMatches(fixtureId);
+    return fixtures;
   }
 
   private convertSnapshotToApiFixture(
