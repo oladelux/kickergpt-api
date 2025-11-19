@@ -1,11 +1,5 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseIntPipe,
-  UseInterceptors,
-} from '@nestjs/common';
-import { ApiOkResponse, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
+import { ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ApiFootballFixturesResponseDto } from './dto/api-football-fixtures-response.dto';
 import { FixturesService } from './fixtures.service';
 import {
@@ -33,15 +27,15 @@ export class FixturesController {
     return this.fixturesService.getTodayFixtures();
   }
 
-  @Get(':fixtureId/redis-cache')
+  @Get('redis-cache')
   @CacheTTL(86_400)
-  @ApiParam({
+  @ApiQuery({
     name: 'fixtureId',
     example: 123456,
-    description: 'API-Football fixture identifier.',
+    description: 'Cached fixture identifier.',
   })
   async getSelectedMatches(
-    @Param('fixtureId', ParseIntPipe) fixtureId: number,
+    @Query('fixtureId') fixtureId: number,
   ): Promise<KickerGPTFixturesResponse | undefined> {
     return this.fixturesService.getSelectedMatches(fixtureId);
   }
