@@ -2,7 +2,10 @@ import { Controller, Get, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ApiFootballFixturesResponseDto } from './dto/api-football-fixtures-response.dto';
 import { FixturesService } from './fixtures.service';
-import { ApiFootballFixturesResponse } from './types/fixtures-response.type';
+import {
+  ApiFootballFixturesResponse,
+  KickerGPTFixturesResponse,
+} from './types/fixtures-response.type';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
 
 @ApiTags('Fixtures')
@@ -22,5 +25,11 @@ export class FixturesController {
   })
   async getTodayFixtures(): Promise<ApiFootballFixturesResponse> {
     return this.fixturesService.getTodayFixtures();
+  }
+
+  @Get('redis-cache')
+  @CacheTTL(86_400)
+  async getCachedFixtures(): Promise<KickerGPTFixturesResponse[]> {
+    return this.fixturesService.getSelectedMatches();
   }
 }

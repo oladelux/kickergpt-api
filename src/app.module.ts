@@ -9,6 +9,7 @@ import mailConfig from './mail/config/mail.config';
 import fileConfig from './files/config/file.config';
 import path from 'path';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { HeaderResolver, I18nModule } from 'nestjs-i18n';
 import { TypeOrmConfigService } from './database/typeorm-config.service';
@@ -24,6 +25,8 @@ import apiFootballConfig from './fixtures/config/api-football.config';
 import { FixturesModule } from './fixtures/fixtures.module';
 import openAiConfig from './openai/config/openai.config';
 import stripeConfig from './stripe/config/stripe.config';
+import weatherConfig from './weather/config/weather.config';
+import redisConfig from './redis/config/redis.config';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
 
@@ -48,9 +51,12 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
         apiFootballConfig,
         openAiConfig,
         stripeConfig,
+        weatherConfig,
+        redisConfig,
       ],
       envFilePath: ['.env'],
     }),
+    ScheduleModule.forRoot(),
     infrastructureDatabaseModule,
     I18nModule.forRootAsync({
       useFactory: (configService: ConfigService<AllConfigType>) => ({

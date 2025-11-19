@@ -3,14 +3,18 @@ import {
   HttpStatus,
   Injectable,
   InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { request as httpsRequest } from 'node:https';
 import { URL } from 'node:url';
 import { AllConfigType } from '../config/config.type';
 import { ApiFootballConfig } from './config/api-football-config.type';
+import { WeatherConfig } from '../weather/config/weather-config.type';
+import { RedisService } from '../redis/redis.service';
 import {
   ApiFootballFixture,
+  ApiFootballFixtureDetails,
   ApiFootballFixturesResponse,
   ApiFootballFixtureStatisticsEntry,
   ApiFootballFixtureStatisticsResponse,
@@ -24,8 +28,13 @@ import {
   ApiFootballStandingsResponse,
   ApiFootballInjury,
   ApiFootballInjuriesResponse,
+  ApiFootballTeamDetails,
+  ApiFootballTeamsResponse,
   ApiFootballSidelinedRecord,
   ApiFootballSidelinedResponse,
+  KickerGPTFixturesResponse,
+  KickerGPTMatchSummary,
+  KickerGPTInjuryPlayerFlag,
 } from './types/fixtures-response.type';
 
 type HeadToHeadQuery = {
@@ -101,12 +110,36 @@ type SidelinedQuery = {
   coachIds?: number[];
 };
 
+type WeatherTimelineDay = {
+  datetime?: string;
+  tempmax?: number;
+  tempmin?: number;
+  precipprob?: number;
+  conditions?: string;
+  description?: string;
+};
+
+type WeatherTimelineResponse = {
+  days?: WeatherTimelineDay[];
+};
+
 @Injectable()
 export class FixturesService {
   private readonly apiToken: string;
   private readonly baseUrl: string;
+  private readonly apiRequestIntervalMs: number;
+  private readonly weatherApiKey?: string;
+  private readonly weatherBaseUrl?: string;
+  private readonly weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
+  private readonly teamDetailsCache = new Map<number, ApiFootballTeamDetails>();
+  private readonly weatherSummaryCache = new Map<string, string | null>();
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 6;
+  private apiRequestQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly configService: ConfigService<AllConfigType>) {
+  constructor(
+    private readonly configService: ConfigService<AllConfigType>,
+    private readonly redisService: RedisService,
+  ) {
     const apiFootballConfig = this.configService.getOrThrow<ApiFootballConfig>(
       'apiFootball',
       {
@@ -116,10 +149,44 @@ export class FixturesService {
 
     this.apiToken = apiFootballConfig.apiToken;
     this.baseUrl = apiFootballConfig.baseUrl.replace(/\/$/, '');
+    this.apiRequestIntervalMs = apiFootballConfig.minRequestIntervalMs;
+
+    const weatherConfig =
+      this.configService.get<WeatherConfig>('weather', {
+        infer: true,
+      }) ?? undefined;
+
+    if (weatherConfig) {
+      this.weatherApiKey = weatherConfig.apiKey;
+      this.weatherBaseUrl = weatherConfig.baseUrl.replace(/\/$/, '');
+      this.weatherUnitGroup = weatherConfig.unitGroup;
+    }
   }
 
   async getTodayFixtures(): Promise<ApiFootballFixturesResponse> {
     return this.getFixturesByDate(this.getToday());
+  }
+
+  async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
+    const fixturesResponses = await this.buildTodayFixturesResponse();
+    await this.redisService.set(
+      this.buildFixturesCacheKey(),
+      fixturesResponses,
+      this.fixturesCacheTtlSeconds,
+    );
+    return fixturesResponses;
+  }
+
+  async getSelectedMatches(): Promise<KickerGPTFixturesResponse[]> {
+    const cacheKey = this.buildFixturesCacheKey();
+    const cached =
+      await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
+    if (!cached) {
+      throw new ServiceUnavailableException(
+        'Fixtures cache is not available yet. Please try again shortly.',
+      );
+    }
+    return cached;
   }
 
   async getFixtureById(
@@ -287,11 +354,13 @@ export class FixturesService {
 
   async getRecentFixturesByTeam(
     teamId: number,
-    last = 5,
+    leagueId: number,
   ): Promise<ApiFootballFixture[]> {
     const result = await this.get<ApiFootballFixturesResponse>('/fixtures', {
       team: teamId,
-      last,
+      status: 'FT',
+      season: '2025',
+      league: leagueId,
     });
 
     return result.response;
@@ -347,12 +416,430 @@ export class FixturesService {
     return this.get<ApiFootballFixturesResponse>('/fixtures', { date });
   }
 
+  private async getFixturesByDateLeagueSeason(
+    date: string,
+    league: number,
+    season: number,
+  ): Promise<ApiFootballFixturesResponse> {
+    return this.get<ApiFootballFixturesResponse>('/fixtures', {
+      date,
+      league,
+      season,
+    });
+  }
+
   private getToday(): string {
     const now = new Date();
     const month = `${now.getMonth() + 1}`.padStart(2, '0');
     const day = `${now.getDate()}`.padStart(2, '0');
 
     return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  private async getTeamDetails(
+    teamId: number,
+  ): Promise<ApiFootballTeamDetails | undefined> {
+    const cached = this.teamDetailsCache.get(teamId);
+
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.get<ApiFootballTeamsResponse>('/teams', {
+      id: teamId,
+    });
+
+    const details = result.response[0];
+
+    if (details) {
+      this.teamDetailsCache.set(teamId, details);
+    }
+
+    return details;
+  }
+
+  private isDerbyMatch(
+    homeTeam?: ApiFootballTeamDetails,
+    awayTeam?: ApiFootballTeamDetails,
+  ): boolean {
+    const homeCity = this.normalizeCity(homeTeam?.venue?.city);
+    const awayCity = this.normalizeCity(awayTeam?.venue?.city);
+
+    if (!homeCity || !awayCity) {
+      return false;
+    }
+
+    return homeCity === awayCity;
+  }
+
+  private normalizeCity(city?: string | null): string | null {
+    if (!city) {
+      return null;
+    }
+
+    const normalized = city.trim().toLowerCase();
+
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  private async buildTodayFixturesResponse(): Promise<
+    KickerGPTFixturesResponse[]
+  > {
+    const result = await this.getFixturesByDate('2025-11-21');
+
+    const allowedLeagues = new Set([
+      39, 40, 41, 42, 61, 62, 78, 79, 88, 89, 135, 136, 140, 141, 203,
+    ]);
+    const filteredFixtures = result.response.filter((fixture) =>
+      allowedLeagues.has(fixture.league.id),
+    );
+
+    return Promise.all(
+      filteredFixtures.map(
+        async (
+          apiFixture: ApiFootballFixture,
+        ): Promise<KickerGPTFixturesResponse> => {
+          const { fixture, league, teams } = apiFixture;
+          const season = league.season;
+
+          const h2hResults = await this.getHeadToHeadFixtures({
+            homeTeamId: teams.home.id,
+            awayTeamId: teams.away.id,
+          });
+
+          const homeInjuryResults = await this.getInjuries({
+            season,
+            teamId: teams.home.id,
+          });
+
+          const awayInjuryResults = await this.getInjuries({
+            season,
+            teamId: teams.away.id,
+          });
+
+          const h2h: KickerGPTMatchSummary[] = await Promise.all(
+            h2hResults.map(async (result) => {
+              const { fixture, league, teams, goals } = result;
+              const weatherSummary =
+                (await this.getWeatherSummaryForFixture(fixture)) ??
+                'Conditions unavailable';
+
+              return {
+                id: fixture.id,
+                date: fixture.date,
+                timestamp: fixture.timestamp,
+                league,
+                teams,
+                venue: fixture.venue,
+                status: fixture.status,
+                goals,
+                derby: true,
+                weatherSummary,
+                referee: fixture.referee ?? '',
+              };
+            }),
+          );
+
+          const homeInjuries: KickerGPTInjuryPlayerFlag[] =
+            this.getLatestInjuriesByPlayer(homeInjuryResults).map((result) => {
+              const { player } = result;
+              return {
+                playerId: player.id,
+                name: player.name,
+                reason: result.reason,
+                date: result.fixture?.date,
+              };
+            });
+
+          const awayInjuries: KickerGPTInjuryPlayerFlag[] =
+            this.getLatestInjuriesByPlayer(awayInjuryResults).map((result) => {
+              const { player } = result;
+
+              return {
+                playerId: player.id,
+                name: player.name,
+                reason: result.reason,
+                date: result.fixture?.date,
+              };
+            });
+
+          const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
+            teams.home.id,
+            league.id,
+          );
+
+          const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
+            teams.away.id,
+            league.id,
+          );
+
+          const [homeTeamDetails, awayTeamDetails] = await Promise.all([
+            this.getTeamDetails(teams.home.id),
+            this.getTeamDetails(teams.away.id),
+          ]);
+
+          const isDerby = this.isDerbyMatch(homeTeamDetails, awayTeamDetails);
+
+          const fixtureWeatherSummary =
+            (await this.getWeatherSummaryForFixture(fixture)) ??
+            'Conditions unavailable';
+
+          const lastHomeMatches = await this.buildMatchSummaries(
+            lastHomeMatchesResults,
+          );
+
+          const lastAwayMatches = await this.buildMatchSummaries(
+            lastAwayMatchesResults,
+          );
+
+          const oddsResult = await this.getFixtureOdds({
+            fixtureId: fixture.id,
+            betId: 1,
+          });
+
+          const homeOdd = oddsResult.find(
+            (odd) => odd.fixture.id === fixture.id,
+          )?.bookmakers[0].bets[0].values[0].odd;
+
+          const awayOdd = oddsResult.find(
+            (odd) => odd.fixture.id === fixture.id,
+          )?.bookmakers[0].bets[0].values[2].odd;
+
+          return {
+            id: fixture.id,
+            timezone: fixture.timezone,
+            date: fixture.date,
+            timestamp: fixture.timestamp,
+            periods: fixture.periods,
+            status: fixture.status,
+            league,
+            teams,
+            venue: fixture.venue,
+            derby: isDerby,
+            matchType: 'league',
+            homeOdd,
+            awayOdd,
+            weatherSummary: fixtureWeatherSummary,
+            referee: fixture.referee ?? '',
+            h2h,
+            homeInjuries,
+            awayInjuries,
+            lastHomeMatches,
+            lastAwayMatches,
+            homeNews: [],
+            awayNews: [],
+          };
+        },
+      ),
+    );
+  }
+
+  private async getWeatherSummaryForFixture(
+    fixture: ApiFootballFixtureDetails,
+  ): Promise<string | null> {
+    if (!this.weatherApiKey || !this.weatherBaseUrl) {
+      return null;
+    }
+
+    const location = this.getWeatherQueryLocation(fixture);
+    const date = this.getFixtureDateString(fixture);
+
+    if (!location || !date) {
+      return null;
+    }
+
+    const cacheKey = `${location.toLowerCase()}|${date}`;
+    if (this.weatherSummaryCache.has(cacheKey)) {
+      return this.weatherSummaryCache.get(cacheKey) ?? null;
+    }
+
+    try {
+      const response = await this.fetchWeatherTimeline(location, date);
+      const summary = this.formatWeatherSummary(response?.days?.[0]);
+      this.weatherSummaryCache.set(cacheKey, summary ?? null);
+      return summary ?? null;
+    } catch {
+      this.weatherSummaryCache.set(cacheKey, null);
+      return null;
+    }
+  }
+
+  private getWeatherQueryLocation(
+    fixture: ApiFootballFixtureDetails,
+  ): string | null {
+    const potentialLocations = [
+      fixture.venue?.city,
+      fixture.venue?.name,
+      fixture.venue?.address,
+    ].filter((value): value is string => typeof value === 'string');
+
+    for (const location of potentialLocations) {
+      const trimmed = location.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+
+    return null;
+  }
+
+  private getFixtureDateString(
+    fixture: ApiFootballFixtureDetails,
+  ): string | null {
+    if (fixture.date) {
+      const [date] = fixture.date.split('T');
+      if (date) {
+        return date;
+      }
+    }
+
+    if (fixture.timestamp) {
+      const fromTimestamp = new Date(fixture.timestamp * 1000)
+        .toISOString()
+        .split('T')[0];
+      if (fromTimestamp) {
+        return fromTimestamp;
+      }
+    }
+
+    return null;
+  }
+
+  private async fetchWeatherTimeline(
+    location: string,
+    date: string,
+  ): Promise<WeatherTimelineResponse | null> {
+    if (!this.weatherBaseUrl || !this.weatherApiKey) {
+      return null;
+    }
+
+    const encodedLocation = encodeURIComponent(location);
+    const url = new URL(`${this.weatherBaseUrl}/${encodedLocation}/${date}`);
+    url.searchParams.set('key', this.weatherApiKey);
+    url.searchParams.set('unitGroup', this.weatherUnitGroup);
+    url.searchParams.set('include', 'days');
+
+    return this.requestJson<WeatherTimelineResponse>(
+      url,
+      {
+        Accept: 'application/json',
+      },
+      'Weather provider request failed.',
+    );
+  }
+
+  private formatWeatherSummary(day?: WeatherTimelineDay): string | null {
+    if (!day) {
+      return null;
+    }
+
+    const parts: string[] = [];
+    const description = day.description?.trim() || day.conditions?.trim();
+
+    if (description) {
+      parts.push(description);
+    }
+
+    const temperatureParts: string[] = [];
+    const unit = this.getTemperatureUnitSuffix();
+    if (typeof day.tempmax === 'number') {
+      temperatureParts.push(`high ${Math.round(day.tempmax)}${unit}`);
+    }
+    if (typeof day.tempmin === 'number') {
+      temperatureParts.push(`low ${Math.round(day.tempmin)}${unit}`);
+    }
+    if (temperatureParts.length > 0) {
+      parts.push(temperatureParts.join(', '));
+    }
+
+    if (typeof day.precipprob === 'number') {
+      parts.push(`precip ${Math.round(day.precipprob)}%`);
+    }
+
+    return parts.length > 0 ? parts.join('. ') : null;
+  }
+
+  private getTemperatureUnitSuffix(): string {
+    switch (this.weatherUnitGroup) {
+      case 'us':
+        return '°F';
+      case 'base':
+        return 'K';
+      default:
+        return '°C';
+    }
+  }
+
+  private async buildMatchSummaries(
+    fixtures: ApiFootballFixture[],
+  ): Promise<KickerGPTMatchSummary[]> {
+    return Promise.all(
+      fixtures.map(async (result) => {
+        const { fixture, league, teams, goals } = result;
+
+        const [homeTeamDetails, awayTeamDetails] = await Promise.all([
+          this.getTeamDetails(teams.home.id),
+          this.getTeamDetails(teams.away.id),
+        ]);
+
+        const weatherSummary =
+          (await this.getWeatherSummaryForFixture(fixture)) ??
+          'Conditions unavailable';
+
+        return {
+          id: fixture.id,
+          date: fixture.date,
+          timestamp: fixture.timestamp,
+          league,
+          teams,
+          venue: fixture.venue,
+          status: fixture.status,
+          goals,
+          derby: this.isDerbyMatch(homeTeamDetails, awayTeamDetails),
+          weatherSummary,
+          referee: fixture.referee ?? '',
+        };
+      }),
+    );
+  }
+
+  private getLatestInjuriesByPlayer(
+    injuries: ApiFootballInjury[],
+  ): ApiFootballInjury[] {
+    const latest = new Map<number, ApiFootballInjury>();
+
+    injuries.forEach((injury) => {
+      const playerId = injury.player.id;
+
+      if (playerId == null) {
+        return;
+      }
+
+      const current = latest.get(playerId);
+      const currentDate = current ? this.getFixtureTimestamp(current) : null;
+      const incomingDate = this.getFixtureTimestamp(injury);
+
+      if (
+        !current ||
+        (incomingDate ?? -Infinity) > (currentDate ?? -Infinity)
+      ) {
+        latest.set(playerId, injury);
+      }
+    });
+
+    return Array.from(latest.values());
+  }
+
+  private getFixtureTimestamp(injury: ApiFootballInjury): number | null {
+    const date = injury.fixture?.date ?? injury.date;
+
+    if (!date) {
+      return null;
+    }
+
+    const timestamp = Date.parse(date);
+
+    return Number.isNaN(timestamp) ? null : timestamp;
   }
 
   private async get<T>(
@@ -369,15 +856,59 @@ export class FixturesService {
       url.searchParams.set(key, String(value));
     });
 
+    return this.scheduleApiFootballRequest(() =>
+      this.requestJson<T>(
+        url,
+        {
+          Accept: 'application/json',
+          'x-apisports-key': this.apiToken,
+        },
+        'API-Football request failed.',
+      ),
+    );
+  }
+
+  private joinIds(ids?: Array<string | number>): string | undefined {
+    if (!ids || ids.length === 0) {
+      return undefined;
+    }
+    return ids.join('-');
+  }
+
+  private scheduleApiFootballRequest<T>(
+    callback: () => Promise<T>,
+  ): Promise<T> {
+    const execution = this.apiRequestQueue.then(callback);
+    this.apiRequestQueue = execution
+      .catch(() => undefined)
+      .then(() => this.delay(this.apiRequestIntervalMs));
+    return execution;
+  }
+
+  private delay(ms: number): Promise<void> {
+    if (!ms || ms <= 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  private buildFixturesCacheKey(): string {
+    return `fixtures:${this.getToday()}`;
+  }
+
+  private async requestJson<T>(
+    url: URL,
+    headers: Record<string, string>,
+    errorMessage: string,
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const request = httpsRequest(
         url,
         {
           method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            'x-apisports-key': this.apiToken,
-          },
+          headers,
         },
         (response) => {
           const chunks: Uint8Array[] = [];
@@ -396,7 +927,7 @@ export class FixturesService {
               } catch {
                 reject(
                   new InternalServerErrorException(
-                    'Failed to parse API-Football response.',
+                    'Failed to parse upstream response.',
                   ),
                 );
                 return;
@@ -415,7 +946,7 @@ export class FixturesService {
             reject(
               new HttpException(
                 {
-                  message: 'API-Football request failed.',
+                  message: errorMessage,
                   statusCode,
                   error: parsedBody,
                 },
@@ -429,19 +960,12 @@ export class FixturesService {
       request.on('error', (error) => {
         reject(
           new InternalServerErrorException(
-            `Unable to reach API-Football. ${error.message}`,
+            `Unable to reach upstream provider. ${error.message}`,
           ),
         );
       });
 
       request.end();
     });
-  }
-
-  private joinIds(ids?: Array<string | number>): string | undefined {
-    if (!ids || ids.length === 0) {
-      return undefined;
-    }
-    return ids.join('-');
   }
 }
