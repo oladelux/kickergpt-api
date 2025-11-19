@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ApiFootballFixturesResponseDto } from './dto/api-football-fixtures-response.dto';
 import { FixturesService } from './fixtures.service';
@@ -7,7 +7,6 @@ import {
   KickerGPTFixturesResponse,
 } from './types/fixtures-response.type';
 import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
-import { SelectedMatchesQueryDto } from './dto/selected-matches-query.dto';
 
 @ApiTags('Fixtures')
 @Controller({
@@ -30,10 +29,7 @@ export class FixturesController {
 
   @Get('test')
   @CacheTTL(86_400)
-  async test(
-    @Query() query: SelectedMatchesQueryDto,
-  ): Promise<KickerGPTFixturesResponse[]> {
-    const { league, season, date } = query;
-    return this.fixturesService.getSelectedMatches(league, season, date);
+  async getCachedFixtures(): Promise<KickerGPTFixturesResponse[]> {
+    return this.fixturesService.getSelectedMatches();
   }
 }
