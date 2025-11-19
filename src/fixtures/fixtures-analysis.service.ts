@@ -19,17 +19,18 @@ import {
 } from './types/fixture-analysis.type';
 import {
   ApiFootballFixture,
+  ApiFootballInjury,
+  ApiFootballLeague,
   ApiFootballOdds,
+  ApiFootballTeam,
+  KickerGPTFixturesResponse,
+  KickerGPTMatchSummary,
+  KickerGPTInjuryPlayerFlag,
 } from './types/fixtures-response.type';
 import { FixtureChatsService } from './fixture-chats.service';
 import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { buildBenchDepth, buildScheduleLoad } from './analysis/features';
-import {
-  buildMarketDrift,
-  inferLatestFav,
-  inferOpenFav,
-} from './analysis/market';
 
 const DATA_REQUIREMENTS = {
   HEAD_TO_HEAD: 'HEAD_TO_HEAD',
@@ -165,31 +166,37 @@ export class FixturesAnalysisService {
       return cached;
     }
 
-    const fixture = await this.fixturesService.getFixtureById(fixtureId);
+    const fixtureSnapshot = await this.getCachedFixtureSnapshot(fixtureId);
 
-    if (!fixture) {
+    if (!fixtureSnapshot) {
       throw new NotFoundException(
-        `Fixture with id ${fixtureId} was not found in API-Football.`,
+        `Fixture with id ${fixtureId} is not available in the cached fixtures.`,
       );
     }
 
-    const h2h = await this.fixturesService.getHeadToHead(
-      fixture.teams.home.id,
-      fixture.teams.away.id,
-      fixture.league?.id,
+    const fixture = this.convertSnapshotToApiFixture(fixtureSnapshot);
+    const cachedHeadToHead = this.convertSummariesToFixtures(
+      fixtureSnapshot.h2h ?? [],
+      fixtureSnapshot.timezone,
     );
-    const currentHomeTeamMatchesInSeason =
-      await this.fixturesService.getTeamSeasonFixtures({
-        teamId: fixture.teams.home.id,
-        leagueId: fixture.league.id,
-        season: fixture.league.season,
-      });
-    const currentAwayTeamMatchesInSeason =
-      await this.fixturesService.getTeamSeasonFixtures({
-        teamId: fixture.teams.away.id,
-        leagueId: fixture.league.id,
-        season: fixture.league.season,
-      });
+    const cachedHomeForm = this.convertSummariesToFixtures(
+      fixtureSnapshot.lastHomeMatches ?? [],
+      fixtureSnapshot.timezone,
+    );
+    const cachedAwayForm = this.convertSummariesToFixtures(
+      fixtureSnapshot.lastAwayMatches ?? [],
+      fixtureSnapshot.timezone,
+    );
+    const cachedHomeInjuries = this.convertInjuryFlags(
+      fixtureSnapshot.homeInjuries ?? [],
+      fixture.teams.home,
+      fixture.league,
+    );
+    const cachedAwayInjuries = this.convertInjuryFlags(
+      fixtureSnapshot.awayInjuries ?? [],
+      fixture.teams.away,
+      fixture.league,
+    );
 
     if (userId) {
       const subscription =
@@ -217,235 +224,81 @@ export class FixturesAnalysisService {
       },
     };
     const contextNotes: string[] = [];
+    const supportedRequirements = new Set<FixtureDataRequirement>([
+      DATA_REQUIREMENTS.HEAD_TO_HEAD,
+      DATA_REQUIREMENTS.RECENT_FORM,
+      DATA_REQUIREMENTS.INJURIES,
+      DATA_REQUIREMENTS.SCHEDULE_LOAD,
+      DATA_REQUIREMENTS.BENCH_DEPTH,
+      DATA_REQUIREMENTS.GAME_DAY_TIME_ANALYSIS,
+    ]);
+
+    Array.from(dataRequirements)
+      .filter((req) => !supportedRequirements.has(req))
+      .forEach((req) => {
+        contextNotes.push(
+          `${req
+            .toLowerCase()
+            .replace(
+              /_/g,
+              ' ',
+            )} data is not available in the cached fixture snapshot.`,
+        );
+      });
+
+    const completedHeadToHead =
+      this.filterCompletedFixtures(cachedHeadToHead) ?? [];
+    const completedHomeForm =
+      this.filterCompletedFixtures(cachedHomeForm) ?? [];
+    const completedAwayForm =
+      this.filterCompletedFixtures(cachedAwayForm) ?? [];
+    const h2h = completedHeadToHead;
 
     if (dataRequirements.has(DATA_REQUIREMENTS.HEAD_TO_HEAD)) {
-      const headToHead = await this.safeFetch(
-        () =>
-          this.fixturesService.getHeadToHead(
-            homeTeamId,
-            awayTeamId,
-            FixturesAnalysisService.HEAD_TO_HEAD_LIMIT,
-          ),
-        contextNotes,
-        'Head-to-head history unavailable.',
-      );
-
-      const completedHeadToHead = this.filterCompletedFixtures(headToHead);
-
-      if (completedHeadToHead?.length) {
-        contextPayload.headToHead = completedHeadToHead;
+      if (completedHeadToHead.length > 0) {
+        contextPayload.headToHead = completedHeadToHead.slice(
+          0,
+          FixturesAnalysisService.HEAD_TO_HEAD_LIMIT,
+        );
+      } else {
+        contextNotes.push('Head-to-head history unavailable in cached data.');
       }
     }
 
-    if (dataRequirements.has(DATA_REQUIREMENTS.RECENT_FORM)) {
-      const [homeForm, awayForm] = await Promise.all([
-        this.safeFetch(
-          () =>
-            this.fixturesService.getRecentFixturesByTeam(
-              homeTeamId,
-              fixture.league?.id,
-            ),
-          contextNotes,
-          'Home team form unavailable.',
-        ),
-        this.safeFetch(
-          () =>
-            this.fixturesService.getRecentFixturesByTeam(
-              awayTeamId,
-              fixture.league?.id,
-            ),
-          contextNotes,
-          'Away team form unavailable.',
-        ),
-      ]);
+    const needsRecentForm =
+      dataRequirements.has(DATA_REQUIREMENTS.RECENT_FORM) ||
+      dataRequirements.has(DATA_REQUIREMENTS.SCHEDULE_LOAD) ||
+      dataRequirements.has(DATA_REQUIREMENTS.GAME_DAY_TIME_ANALYSIS);
 
-      const completedHomeForm = this.filterCompletedFixtures(homeForm) ?? [];
-      const completedAwayForm = this.filterCompletedFixtures(awayForm) ?? [];
-
+    if (needsRecentForm) {
       if (completedHomeForm.length || completedAwayForm.length) {
         contextPayload.recentForm = {
-          home: completedHomeForm,
-          away: completedAwayForm,
+          home: completedHomeForm.slice(
+            0,
+            FixturesAnalysisService.RECENT_FORM_LIMIT,
+          ),
+          away: completedAwayForm.slice(
+            0,
+            FixturesAnalysisService.RECENT_FORM_LIMIT,
+          ),
         };
+      } else if (dataRequirements.has(DATA_REQUIREMENTS.RECENT_FORM)) {
+        contextNotes.push('Recent form unavailable in cached data.');
       }
     }
 
-    if (dataRequirements.has(DATA_REQUIREMENTS.LINEUPS)) {
-      const lineups = await this.safeFetch(
-        () => this.fixturesService.getLineups(fixtureId),
-        contextNotes,
-        'Lineups not released yet.',
-      );
+    const needsInjuries =
+      dataRequirements.has(DATA_REQUIREMENTS.INJURIES) ||
+      dataRequirements.has(DATA_REQUIREMENTS.BENCH_DEPTH);
 
-      if (lineups?.length) {
-        contextPayload.lineups = lineups;
-      }
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.ODDS)) {
-      const odds = await this.safeFetch(
-        () => this.fixturesService.getOdds(fixtureId),
-        contextNotes,
-        'Odds data unavailable.',
-      );
-
-      if (odds?.length) {
-        contextPayload.odds = odds;
-      }
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.MARKET_DRIFT)) {
-      try {
-        const openFav = inferOpenFav(contextPayload.odds);
-        const latestFav = inferLatestFav(contextPayload.odds);
-        contextPayload.marketDrift = buildMarketDrift(openFav, latestFav);
-      } catch (e) {
-        contextNotes.push(`Market drift unavailable: ${(e as Error).message}`);
-      }
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.STATISTICS)) {
-      const statistics = await this.safeFetch(
-        () =>
-          this.fixturesService.getFixtureStatistics({
-            fixtureId,
-            half: true,
-          }),
-        contextNotes,
-        'Fixture statistics unavailable.',
-      );
-
-      if (statistics?.length) {
-        contextPayload.statistics = statistics;
-      }
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.PLAYER_STATS)) {
-      const playerStats = await this.safeFetch(
-        () =>
-          this.fixturesService.getFixturePlayers({
-            fixtureId,
-          }),
-        contextNotes,
-        'Player statistics unavailable.',
-      );
-
-      if (playerStats?.length) {
-        contextPayload.playerStats = playerStats;
-      }
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.INJURIES)) {
-      if (fixture.league?.id && fixture.league?.season) {
-        const [homeInjuries, awayInjuries] = await Promise.all([
-          this.safeFetch(
-            () =>
-              this.fixturesService.getInjuries({
-                leagueId: fixture.league.id,
-                season: fixture.league.season,
-                teamId: homeTeamId,
-              }),
-            contextNotes,
-            'Home team injuries unavailable.',
-          ),
-          this.safeFetch(
-            () =>
-              this.fixturesService.getInjuries({
-                leagueId: fixture.league.id,
-                season: fixture.league.season,
-                teamId: awayTeamId,
-              }),
-            contextNotes,
-            'Away team injuries unavailable.',
-          ),
-        ]);
-
-        if (
-          (homeInjuries?.length ?? 0) > 0 ||
-          (awayInjuries?.length ?? 0) > 0
-        ) {
-          contextPayload.injuries = {
-            home: homeInjuries ?? [],
-            away: awayInjuries ?? [],
-          };
-        }
-      } else {
-        contextNotes.push(
-          'Unable to fetch injuries because league id or season is missing.',
-        );
-      }
-    }
-
-    if (
-      dataRequirements.has(DATA_REQUIREMENTS.STANDINGS) &&
-      fixture.league?.id &&
-      fixture.league?.season
-    ) {
-      const standings = await this.safeFetch(
-        () =>
-          this.fixturesService.getStandings(
-            fixture.league.id,
-            fixture.league.season,
-          ),
-        contextNotes,
-        'Standings data unavailable.',
-      );
-
-      if (standings) {
-        contextPayload.standings = standings;
-      }
-    } else if (dataRequirements.has(DATA_REQUIREMENTS.STANDINGS)) {
-      contextNotes.push('League standings missing league id or season.');
-    }
-
-    if (dataRequirements.has(DATA_REQUIREMENTS.ODDS_HISTORY)) {
-      if (contextPayload.headToHead?.length) {
-        const fixtureIds = contextPayload.headToHead
-          .map((fx) => fx.fixture.id)
-          .filter((id): id is number => typeof id === 'number');
-
-        if (fixtureIds.length > 0) {
-          const oddsHistory = await this.safeFetch(
-            () => this.fixturesService.getOddsHistoryForFixtures(fixtureIds),
-            contextNotes,
-            'Odds history unavailable.',
-          );
-
-          if (oddsHistory && Object.keys(oddsHistory).length > 0) {
-            contextPayload.oddsHistory = oddsHistory;
-          }
-        }
-      }
-
-      if (fixture.league?.id && fixture.league?.season) {
-        const seasonsWindow = this.getSeasonWindow(
-          fixture.league.season,
-          FixturesAnalysisService.ODDS_HISTORY_SEASON_DEPTH,
-        );
-
-        if (seasonsWindow.length > 0) {
-          const [homeLeagueOdds, awayLeagueOdds] = await Promise.all([
-            this.collectTeamLeagueOddsHistory(
-              homeTeamId,
-              fixture.league.id,
-              seasonsWindow,
-              contextNotes,
-            ),
-            this.collectTeamLeagueOddsHistory(
-              awayTeamId,
-              fixture.league.id,
-              seasonsWindow,
-              contextNotes,
-            ),
-          ]);
-
-          if (homeLeagueOdds || awayLeagueOdds) {
-            contextPayload.leagueOddsHistory = {
-              home: homeLeagueOdds ?? {},
-              away: awayLeagueOdds ?? {},
-            };
-          }
-        }
+    if (needsInjuries) {
+      if (cachedHomeInjuries.length || cachedAwayInjuries.length) {
+        contextPayload.injuries = {
+          home: cachedHomeInjuries,
+          away: cachedAwayInjuries,
+        };
+      } else if (dataRequirements.has(DATA_REQUIREMENTS.INJURIES)) {
+        contextNotes.push('Injury data unavailable in cached snapshot.');
       }
     }
 
@@ -463,8 +316,8 @@ export class FixturesAnalysisService {
         const gameDayTimeAnalysis = this.buildGameDayTimeAnalysis({
           reference,
           headToHead: h2h,
-          homeSeasonFixtures: currentHomeTeamMatchesInSeason,
-          awaySeasonFixtures: currentAwayTeamMatchesInSeason,
+          homeSeasonFixtures: completedHomeForm,
+          awaySeasonFixtures: completedAwayForm,
           homeTeamId,
           awayTeamId,
           currentFixtureId: fixtureId,
@@ -480,52 +333,34 @@ export class FixturesAnalysisService {
       }
     }
 
-    // RELATIVE STANDINGS SPLITS (vs above / vs below)
-    if (dataRequirements.has(DATA_REQUIREMENTS.RELATIVE_STANDINGS_SPLITS)) {
-      try {
-        const standings = (contextPayload as any).standings;
-        const recentForm = (contextPayload as any).recentForm;
-        if (standings && recentForm) {
-          const splits = this.computeRelativeStandingsSplits(
-            standings,
-            { home: recentForm.home ?? [], away: recentForm.away ?? [] },
-            { homeTeamId, awayTeamId },
-            fixture.league?.id,
-            fixture.league?.season,
-          );
-          if (splits) {
-            (contextPayload as any).relativeSplits = splits;
-          }
-        } else {
-          contextNotes.push(
-            'Relative standings splits skipped: standings or recent form missing.',
-          );
-        }
-      } catch (e) {
-        this.logger.warn(
-          `Failed to compute relative standings splits: ${
-            (e as Error).message
-          }`,
+    if (dataRequirements.has(DATA_REQUIREMENTS.SCHEDULE_LOAD)) {
+      const homeForm = contextPayload.recentForm?.home;
+      const awayForm = contextPayload.recentForm?.away;
+      if (homeForm || awayForm) {
+        contextPayload.scheduleLoad = {
+          home: buildScheduleLoad(homeForm ?? []),
+          away: buildScheduleLoad(awayForm ?? []),
+        };
+      } else {
+        contextNotes.push(
+          'Schedule load skipped: recent form data unavailable.',
         );
       }
     }
 
-    if (dataRequirements.has(DATA_REQUIREMENTS.SCHEDULE_LOAD)) {
-      const homeForm = contextPayload.recentForm?.home ?? [];
-      const awayForm = contextPayload.recentForm?.away ?? [];
-      contextPayload.scheduleLoad = {
-        home: buildScheduleLoad(homeForm),
-        away: buildScheduleLoad(awayForm),
-      };
-    }
-
     if (dataRequirements.has(DATA_REQUIREMENTS.BENCH_DEPTH)) {
-      const homeInj = contextPayload.injuries?.home?.length ?? 0;
-      const awayInj = contextPayload.injuries?.away?.length ?? 0;
-      contextPayload.benchDepth = {
-        home: buildBenchDepth(20, 0, 0, homeInj),
-        away: buildBenchDepth(20, 0, 0, awayInj),
-      };
+      if (contextPayload.injuries) {
+        const homeInj = contextPayload.injuries.home.length;
+        const awayInj = contextPayload.injuries.away.length;
+        contextPayload.benchDepth = {
+          home: buildBenchDepth(20, 0, 0, homeInj),
+          away: buildBenchDepth(20, 0, 0, awayInj),
+        };
+      } else {
+        contextNotes.push(
+          'Bench depth skipped: injury data unavailable in cached snapshot.',
+        );
+      }
     }
 
     if (contextNotes.length > 0) {
@@ -702,6 +537,96 @@ export class FixturesAnalysisService {
       formQuality: 0.5,
       h2hEdge: 0.5,
       relativeSplits: 0.5,
+    };
+  }
+
+  private async getCachedFixtureSnapshot(
+    fixtureId: number,
+  ): Promise<KickerGPTFixturesResponse | undefined> {
+    const fixtures = await this.fixturesService.getSelectedMatches();
+    return fixtures.find((candidate) => candidate.id === fixtureId);
+  }
+
+  private convertSnapshotToApiFixture(
+    snapshot: KickerGPTFixturesResponse,
+  ): ApiFootballFixture {
+    return {
+      fixture: {
+        id: snapshot.id,
+        referee: snapshot.referee || null,
+        timezone: snapshot.timezone,
+        date: snapshot.date,
+        timestamp: snapshot.timestamp,
+        periods: snapshot.periods,
+        venue: snapshot.venue,
+        status: snapshot.status,
+      },
+      league: snapshot.league,
+      teams: snapshot.teams,
+      goals: { home: null, away: null },
+      score: this.buildEmptyScore(),
+    };
+  }
+
+  private convertSummariesToFixtures(
+    summaries: KickerGPTMatchSummary[],
+    fallbackTimezone: string,
+  ): ApiFootballFixture[] {
+    return summaries.map((summary) =>
+      this.convertMatchSummary(summary, fallbackTimezone),
+    );
+  }
+
+  private convertMatchSummary(
+    summary: KickerGPTMatchSummary,
+    fallbackTimezone: string,
+  ): ApiFootballFixture {
+    return {
+      fixture: {
+        id: summary.id,
+        referee: summary.referee || null,
+        timezone: fallbackTimezone,
+        date: summary.date,
+        timestamp: summary.timestamp,
+        periods: { first: null, second: null },
+        venue: summary.venue,
+        status: summary.status,
+      },
+      league: summary.league,
+      teams: summary.teams,
+      goals: summary.goals,
+      score: this.buildEmptyScore(),
+    };
+  }
+
+  private convertInjuryFlags(
+    injuries: KickerGPTInjuryPlayerFlag[],
+    team: ApiFootballTeam,
+    league: ApiFootballLeague,
+  ) {
+    return injuries.map<ApiFootballInjury>((injury) => ({
+      player: {
+        id: injury.playerId,
+        name: injury.name,
+        reason: injury.reason,
+      },
+      team,
+      fixture: null,
+      league,
+      season: league?.season ?? null,
+      date: injury.date ?? null,
+      time: null,
+      reason: injury.reason ?? null,
+      type: null,
+    }));
+  }
+
+  private buildEmptyScore() {
+    return {
+      halftime: { home: null, away: null },
+      fulltime: { home: null, away: null },
+      extratime: { home: null, away: null },
+      penalty: { home: null, away: null },
     };
   }
 
