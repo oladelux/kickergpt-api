@@ -177,7 +177,9 @@ export class FixturesService {
     return fixturesResponses;
   }
 
-  async getSelectedMatches(): Promise<KickerGPTFixturesResponse[]> {
+  async getSelectedMatches(
+    fixtureId: number,
+  ): Promise<KickerGPTFixturesResponse | undefined> {
     const cacheKey = this.buildFixturesCacheKey();
     const cached =
       await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
@@ -186,7 +188,13 @@ export class FixturesService {
         'Fixtures cache is not available yet. Please try again shortly.',
       );
     }
-    return cached;
+    const cachedFixture = cached.find((fixture) => fixture.id === fixtureId);
+    if (!cachedFixture) {
+      throw new ServiceUnavailableException(
+        'Fixtures cache is not available yet. Please try again shortly.',
+      );
+    }
+    return cachedFixture;
   }
 
   async getFixtureById(
