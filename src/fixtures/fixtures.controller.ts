@@ -27,7 +27,7 @@ export class FixturesController {
     return this.fixturesService.getTodayFixtures();
   }
 
-  @Get('test')
+  @Get('redis-cache')
   @CacheTTL(86_400)
   async getCachedFixtures(): Promise<KickerGPTFixturesResponse[]> {
     return this.fixturesService.getSelectedMatches();
