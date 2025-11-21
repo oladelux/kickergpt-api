@@ -1,5 +1,11 @@
 import { registerAs } from '@nestjs/config';
-import { IsInt, IsNotEmpty, IsOptional, IsPositive, IsString } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsPositive,
+  IsString,
+} from 'class-validator';
 import validateConfig from '../../utils/validate-config';
 import { ApiFootballConfig } from './api-football-config.type';
 

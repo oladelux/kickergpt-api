@@ -15,9 +15,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FixtureChatsService } from './fixture-chats.service';
-import { GetFixtureChatHistoryQueryDto } from './dto/get-fixture-chat-history-query.dto';
-import { FixtureChatMessageDto } from './dto/fixture-chat-message.dto';
-import { FixtureChatMapper } from './mappers/fixture-chat.mapper';
+import { GetFixtureChatHistoryQueryDto } from '../fixtures/dto/get-fixture-chat-history-query.dto';
+import { FixtureChatMessageDto } from '../fixtures/dto/fixture-chat-message.dto';
+import { FixtureChatMapper } from '../fixtures/mappers/fixture-chat.mapper';
 
 @ApiTags('Fixtures')
 @ApiBearerAuth()
