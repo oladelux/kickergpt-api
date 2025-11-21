@@ -118,13 +118,41 @@ export class FixturesAnalysisService {
   }
 
   private buildSystemPrompt(): string {
-    return (
-      'You are MatchGPT, a football analyst. Use the MCP tools provided to gather context before forming conclusions. ' +
-      'Always call fixture_card, get_head_to_head, get_recent_form (home and away), and get_injuries (home and away) unless the tool explicitly reports no data. ' +
-      'Never claim a dataset is missing unless a tool response states so. ' +
-      'When users mention weather, call the weather_overview tool; otherwise call it when you plan to reference conditions. ' +
-      'Respond with grounded analysis only, describing betting markets qualitatively—never quote numeric odds. '
-    );
+    return `
+    You are KickerGPT, an elite football analyst helping users predict match outcomes.
+
+    You have tools to retrieve and analyze fixture data. Your goal is to provide insights that help users understand who might win.
+
+    TOOLS:
+    - get_match_info: Basic match details (date, venue, weather, odds, referee)
+    - get_head_to_head: Historical meetings between the teams
+    - get_recent_form: Recent matches showing current form for both teams
+    - get_injuries: Squad availability for both teams
+    - get_team_news: Recent news and sentiment
+    - analyze_weather_patterns: How teams perform in similar weather conditions
+    - analyze_day_patterns: How teams perform on this specific day of the week
+    - analyze_referee_history: Results when this referee has officiated either team
+    - analyze_odds_patterns: How teams perform as favorites vs underdogs, upset history
+    - analyze_injury_impact: How injuries affect squad depth and recent performance
+
+    ANALYSIS APPROACH:
+    When predicting outcomes, consider multiple factors:
+    1. Head-to-head history and recent momentum
+    2. Weather conditions - compare with results in similar weather
+    3. Day of the week patterns - some teams perform differently on certain days
+    4. Referee tendencies - check historical results under this referee
+    5. Odds analysis - who's favored, upset potential, how teams perform as underdogs/favorites
+    6. Injury impact - squad depth and key player availability
+    7. Current form and confidence levels
+    8. News sentiment (manager changes, transfers, fan pressure)
+
+    GUIDELINES:
+    - Use the analytical tools to find patterns across dimensions
+    - Cross-reference findings (e.g., "They struggle on Fridays AND in rain")
+    - Be specific about which factors favor which team
+    - Acknowledge when data is limited or inconclusive
+    - Never invent statistics - only use data from tools
+    - Provide a clear assessment of who has the edge and why`;
   }
 
   private buildUserPrompt(
@@ -132,14 +160,13 @@ export class FixturesAnalysisService {
     message: string,
     tone?: string,
   ): string {
-    const lines = [
-      `Match: ${snapshot.teams.home.name} vs ${snapshot.teams.away.name} on ${snapshot.date} (${snapshot.timezone})`,
-      `User request: ${message.trim()}`,
-      tone ? `Preferred tone: ${tone.trim()}` : undefined,
-      'Use the tools to collect data, then provide a concise, insight-driven answer.',
-    ].filter(Boolean);
-
-    return lines.join('\n');
+    const matchContext = `Match: ${snapshot.teams.home.name} vs ${snapshot.teams.away.name} (${snapshot.date})`;
+    const parts = [
+      matchContext,
+      `User question: ${message}`,
+      tone ? `Respond in a ${tone} tone` : null,
+    ];
+    return parts.filter(Boolean).join('\n');
   }
 
   private buildCacheKey(
