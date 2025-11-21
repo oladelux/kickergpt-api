@@ -14,7 +14,6 @@ import { FixtureChatsController } from '../fixture-chats/fixture-chats.controlle
 import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { RedisModule } from '../redis/redis.module';
-import { FixturesCacheScheduler } from './fixtures-cache.scheduler';
 import { SportmonksService } from '../sportmonks/sportmonks.service';
 
 @Module({
@@ -38,7 +37,6 @@ import { SportmonksService } from '../sportmonks/sportmonks.service';
     FixturesService,
     FixturesAnalysisService,
     FixtureChatsService,
-    FixturesCacheScheduler,
     SportmonksService,
   ],
 })

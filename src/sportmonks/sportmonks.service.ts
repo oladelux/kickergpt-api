@@ -63,7 +63,7 @@ export class SportmonksService {
   private readonly apiToken: string;
   private readonly baseUrl: string;
   private readonly apiRequestIntervalMs: number;
-  private readonly fixturesCacheTtlSeconds = 60 * 60 * 6;
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 24;
   private readonly weatherApiKey?: string;
   private readonly weatherBaseUrl?: string;
   private weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
@@ -71,6 +71,7 @@ export class SportmonksService {
     string,
     string | null
   >();
+  private readonly defaultTimezone = 'Europe/Berlin'; // CET/CEST canonical IANA zone
   private apiRequestQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -217,18 +218,21 @@ export class SportmonksService {
 
   private async getFixturesByDate(
     date: string,
+    timezone?: string,
   ): Promise<SportmonksFixturesResponse> {
+    const resolvedTimezone = this.resolveTimezone(timezone);
     return this.get<SportmonksFixturesResponse>(`/fixtures/date/${date}`, {
       include:
-        'participants;participants.venue;odds;venue;sidelined.sideline;sidelined.player.position;sidelined.type;league.country;season;scores;referees;referees.referee',
+        'participants;participants.venue;odds;venue;sidelined.sideline;sidelined.player.position;sidelined.type;league.country;season;scores;referees;referees.referee;state',
       filters: 'markets:1;bookmakers:1',
+      timezone: resolvedTimezone,
     });
   }
 
-  private async buildTodayFixturesResponse(): Promise<
-    KickerGPTFixturesResponse[]
-  > {
-    const result = await this.getFixturesByDate('2025-11-21');
+  private async buildTodayFixturesResponse(
+    timezone?: string,
+  ): Promise<KickerGPTFixturesResponse[]> {
+    const result = await this.getFixturesByDate(this.getToday(), timezone);
 
     return Promise.all(
       result.data.map(
@@ -383,7 +387,7 @@ export class SportmonksService {
       `/fixtures/head-to-head/${homeTeamId}/${awayTeamId}`,
       {
         include:
-          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season',
+          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state',
         filters: 'markets:1;bookmakers:1',
       },
     );
@@ -400,7 +404,7 @@ export class SportmonksService {
       `/fixtures/between/${startDate}/${endDate}/${teamId}`,
       {
         include:
-          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season',
+          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state',
         filters: 'markets:1;bookmakers:1',
       },
     );
@@ -411,22 +415,27 @@ export class SportmonksService {
   getInjuries(query: InjuriesQuery): PlayerInjury[] {
     const { sidelined } = query;
 
-    const injuries = sidelined.map((sidelined) => {
-      return {
-        id: sidelined.player.id,
-        name: `${sidelined.player.firstname} ${sidelined.player.lastname}`,
-        reason: sidelined.sideline.category ?? 'unknown',
-        date: sidelined.sideline.start_date ?? 'unknown',
-        expectedReturnDate: sidelined.sideline.end_date ?? 'unknown',
-        position: sidelined.player.position.name ?? 'unknown',
-        completed: sidelined.sideline.completed,
-      };
-    });
+    const injuries =
+      sidelined.length > 0
+        ? sidelined.map((sidelined) => {
+            return {
+              id: sidelined.player.id,
+              name: `${sidelined.player.firstname} ${sidelined.player.lastname}`,
+              reason: sidelined.sideline?.category ?? 'unknown',
+              date: sidelined.sideline?.start_date ?? 'unknown',
+              expectedReturnDate: sidelined.sideline?.end_date ?? 'unknown',
+              position: sidelined.player.position.name ?? 'unknown',
+              completed: sidelined.sideline?.completed,
+            };
+          })
+        : [];
     return injuries;
   }
 
-  async getTodayFixtures(): Promise<SportmonksFixturesResponse> {
-    return this.getFixturesByDate('2025-11-21');
+  async getTodayFixtures(
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    return this.getFixturesByDate(this.getToday(), timezone);
   }
 
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
@@ -488,6 +497,22 @@ export class SportmonksService {
     const day = `${now.getDate()}`.padStart(2, '0');
 
     return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  private resolveTimezone(timezone?: string): string {
+    const trimmed = timezone?.trim();
+
+    if (trimmed) {
+      try {
+        // Validate timezone using Intl; it throws on invalid identifiers.
+        new Intl.DateTimeFormat('en-US', { timeZone: trimmed }).format();
+        return trimmed;
+      } catch {
+        // Fall back to environment timezone if validation fails.
+      }
+    }
+
+    return this.defaultTimezone;
   }
 
   private buildLeagueResponse(
