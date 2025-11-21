@@ -28,9 +28,8 @@ export class PromptUsageService {
     userId: string;
     plan: SubscriptionPlan;
     status: SubscriptionStatus;
-    amount?: number;
   }): Promise<PromptUsage> {
-    const amount = params.amount ?? 1;
+    const amount = 1; // TODO: Implement amount
     if (amount <= 0) {
       throw new Error('Prompt amount must be positive');
     }

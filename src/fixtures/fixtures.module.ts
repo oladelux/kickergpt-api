@@ -5,16 +5,17 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import apiFootballConfig from './config/api-football.config';
 import { FixturesController } from './fixtures.controller';
 import { FixturesService } from './fixtures.service';
-import { FixturesAnalysisController } from './fixtures-analysis.controller';
-import { FixturesAnalysisService } from './fixtures-analysis.service';
+import { FixturesAnalysisController } from '../analysis/analysis.controller';
+import { FixturesAnalysisService } from '../analysis/analysis.service';
 import { OpenAiModule } from '../openai/openai.module';
 import { FixtureChatEntity } from './infrastructure/persistence/relational/entities/fixture-chat.entity';
-import { FixtureChatsService } from './fixture-chats.service';
-import { FixtureChatsController } from './fixture-chats.controller';
+import { FixtureChatsService } from '../fixture-chats/fixture-chats.service';
+import { FixtureChatsController } from '../fixture-chats/fixture-chats.controller';
 import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { RedisModule } from '../redis/redis.module';
 import { FixturesCacheScheduler } from './fixtures-cache.scheduler';
+import { SportmonksService } from '../sportmonks/sportmonks.service';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FixturesCacheScheduler } from './fixtures-cache.scheduler';
     FixturesAnalysisService,
     FixtureChatsService,
     FixturesCacheScheduler,
+    SportmonksService,
   ],
 })
 export class FixturesModule {}

@@ -164,7 +164,7 @@ export class FixturesService {
   }
 
   async getTodayFixtures(): Promise<ApiFootballFixturesResponse> {
-    return this.getFixturesByDate(this.getToday());
+    return this.getFixturesByDate('2025-11-20');
   }
 
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {

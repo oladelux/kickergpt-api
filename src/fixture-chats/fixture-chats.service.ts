@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { FixtureChatEntity } from './infrastructure/persistence/relational/entities/fixture-chat.entity';
-import { FixtureAnalysisMetadata } from './types/fixture-analysis.type';
+import { FixtureChatEntity } from '../fixtures/infrastructure/persistence/relational/entities/fixture-chat.entity';
+import { FixtureAnalysisMetadata } from '../fixtures/types/fixture-analysis.type';
 import { UserEntity } from '../users/infrastructure/persistence/relational/entities/user.entity';
 
 type LogChatParams = {

@@ -70,6 +70,10 @@ class EnvironmentVariablesValidator {
   @IsString()
   @IsOptional()
   DATABASE_CERT: string;
+
+  @IsBoolean()
+  @IsOptional()
+  DATABASE_LOGGING: boolean;
 }
 
 export default registerAs<DatabaseConfig>('database', () => {
@@ -95,5 +99,9 @@ export default registerAs<DatabaseConfig>('database', () => {
     ca: process.env.DATABASE_CA,
     key: process.env.DATABASE_KEY,
     cert: process.env.DATABASE_CERT,
+    logQueries:
+      process.env.DATABASE_LOGGING !== undefined
+        ? process.env.DATABASE_LOGGING === 'true'
+        : false,
   };
 });
