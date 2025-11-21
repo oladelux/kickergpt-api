@@ -1,4 +1,4 @@
-import { Controller, Get, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Query, UseInterceptors } from '@nestjs/common';
 import { ApiOkResponse, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { SportmonksFixturesResponseDto } from './dto/sportmonks-fixtures-response.dto';
 import { SportmonksService } from './sportmonks.service';
@@ -45,7 +45,16 @@ export class SportmonksController {
   })
   @Get('today')
   @CacheTTL(86_400)
-  async getFixturesOfDay(): Promise<SportmonksFixturesResponse> {
-    return this.sportmonksService.getTodayFixtures();
+  @ApiQuery({
+    name: 'timezone',
+    required: false,
+    description:
+      'IANA timezone identifier to localize fixture times (e.g. America/New_York). Defaults to the server timezone.',
+    example: 'America/New_York',
+  })
+  async getFixturesOfDay(
+    @Query('timezone') timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    return this.sportmonksService.getTodayFixtures(timezone);
   }
 }

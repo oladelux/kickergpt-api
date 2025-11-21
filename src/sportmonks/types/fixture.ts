@@ -29,6 +29,15 @@ export type SportmonksFixture = {
   sidelined: SportmonksSidelined[];
   prematchnews: SportmonksPreMatchNews;
   scores: SportmonksScore[];
+  state: SportmonksState;
+};
+
+export type SportmonksState = {
+  id: number;
+  state: string;
+  name: string;
+  short_name: string;
+  developer_name: string;
 };
 
 export type SportmonksPagination = {
@@ -49,6 +58,7 @@ export type SportmonksFixturesRequestOptions = {
   order?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
+  timezone?: string;
 };
 
 export type SportmonksParticipant = {
