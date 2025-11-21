@@ -5,6 +5,7 @@ import {
   ParseIntPipe,
   Post,
   Request,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -14,14 +15,14 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { FixturesAnalysisService } from './fixtures-analysis.service';
-import { CreateFixtureAnalysisDto } from './dto/create-fixture-analysis.dto';
-import { FixtureAnalysisResponseDto } from './dto/fixture-analysis-response.dto';
-import { FixtureAnalysis } from './types/fixture-analysis.type';
+import { FixturesAnalysisService } from './analysis.service';
+import { CreateFixtureAnalysisDto } from '../fixtures/dto/create-fixture-analysis.dto';
+import { FixtureAnalysisResponseDto } from '../fixtures/dto/fixture-analysis-response.dto';
+import { FixtureAnalysis } from '../fixtures/types/fixture-analysis.type';
 
 @ApiTags('Fixtures')
 @Controller({
-  path: 'fixtures',
+  path: 'analyze',
   version: '1',
 })
 export class FixturesAnalysisController {
@@ -31,7 +32,7 @@ export class FixturesAnalysisController {
 
   @ApiBearerAuth()
   @UseGuards(AuthGuard('jwt'))
-  @Post(':fixtureId/analyze')
+  @Post(':fixtureId')
   @ApiParam({
     name: 'fixtureId',
     example: 123456,
@@ -47,11 +48,15 @@ export class FixturesAnalysisController {
     @Body() body: CreateFixtureAnalysisDto,
     @Request() request,
   ): Promise<FixtureAnalysis> {
+    const userId = request.user?.id;
+    if (!userId) {
+      throw new UnauthorizedException('User not authenticated');
+    }
     return this.fixturesAnalysisService.analyzeFixture(
       fixtureId,
       body.message,
+      userId,
       body.tone,
-      request.user?.id,
     );
   }
 }

@@ -8,7 +8,7 @@ export class FixturesCacheScheduler {
 
   constructor(private readonly fixturesService: FixturesService) {}
 
-  @Cron('49 20 * * *')
+  @Cron('44 20 * * *')
   async refreshTodayFixturesCache(): Promise<void> {
     this.logger.log(
       'Running cron job to refresh today fixtures cache in Redis.',
