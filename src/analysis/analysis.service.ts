@@ -15,6 +15,7 @@ import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { buildFixtureTools } from './mcp/fixture-tools.builder';
 import { SportmonksService } from '../sportmonks/sportmonks.service';
+import { buildFollowUpSuggestions } from './follow-up-suggestions.builder';
 
 @Injectable()
 export class FixturesAnalysisService {
@@ -93,6 +94,13 @@ export class FixturesAnalysisService {
         totalTokens: response.totalTokens,
       },
     };
+
+    // Add follow-up suggestions for first-time queries on this match
+    const isFirstQuery = !cached;
+    if (isFirstQuery) {
+      const suggestions = buildFollowUpSuggestions(fixtureSnapshot, [], 3);
+      analysis.followUpSuggestions = suggestions;
+    }
 
     await this.cacheManager.set(
       cacheKey,

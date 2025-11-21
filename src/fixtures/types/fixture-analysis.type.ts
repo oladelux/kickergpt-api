@@ -10,6 +10,12 @@ import {
   ApiFootballStandingsLeague,
 } from './fixtures-response.type';
 
+export type FollowUpSuggestion = {
+  id: string;
+  question: string;
+  available: boolean;
+};
+
 export type FixtureAnalysisMetadata = {
   model: string;
   promptTokens?: number;
@@ -21,6 +27,7 @@ export type FixtureAnalysis = {
   fixtureId: number;
   summary: string;
   metadata: FixtureAnalysisMetadata;
+  followUpSuggestions?: FollowUpSuggestion[];
 };
 
 export type FixtureAnalysisContext = {
