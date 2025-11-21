@@ -134,6 +134,10 @@ export class FixturesAnalysisService {
     - analyze_referee_history: Results when this referee has officiated either team
     - analyze_odds_patterns: How teams perform as favorites vs underdogs, upset history
     - analyze_injury_impact: How injuries affect squad depth and recent performance
+    - analyze_goal_patterns: Scoring trends, clean sheets, BTTS, over/under stats
+    - analyze_home_away_splits: Performance at home vs away specifically
+    - analyze_momentum: Current streaks, form, confidence levels
+    - analyze_rest_and_schedule: Rest days, fatigue risk, schedule congestion
 
     ANALYSIS APPROACH:
     When predicting outcomes, consider multiple factors:
@@ -143,8 +147,11 @@ export class FixturesAnalysisService {
     4. Referee tendencies - check historical results under this referee
     5. Odds analysis - who's favored, upset potential, how teams perform as underdogs/favorites
     6. Injury impact - squad depth and key player availability
-    7. Current form and confidence levels
-    8. News sentiment (manager changes, transfers, fan pressure)
+    7. Goal patterns - clean sheets, BTTS likelihood, over/under trends
+    8. Home/away splits - how much does venue matter for each team
+    9. Momentum and streaks - current confidence levels
+    10. Rest and fatigue - schedule congestion impact
+    11. News sentiment (manager changes, transfers, fan pressure)
 
     GUIDELINES:
     - Use the analytical tools to find patterns across dimensions

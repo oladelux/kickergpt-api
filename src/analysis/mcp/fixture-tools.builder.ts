@@ -31,6 +31,15 @@ export function buildFixtureTools(
   const homeTeamId = context.teams.home.id;
   const awayTeamId = context.teams.away.id;
 
+  const homeRestDays = calculateRestDays(
+    context.lastHomeMatches ?? [],
+    context.date,
+  );
+  const awayRestDays = calculateRestDays(
+    context.lastAwayMatches ?? [],
+    context.date,
+  );
+
   tools.push({
     name: 'get_match_info',
     description:
@@ -303,6 +312,115 @@ export function buildFixtureTools(
     },
   });
 
+  tools.push({
+    name: 'analyze_goal_patterns',
+    description:
+      'Analyze scoring trends - clean sheets, failed to score, BTTS, over/under 2.5 goals',
+    handler: () => ({
+      home: {
+        team: context.teams.home.name,
+        ...analyzeGoalPatterns(context.lastHomeMatches ?? [], homeTeamId),
+      },
+      away: {
+        team: context.teams.away.name,
+        ...analyzeGoalPatterns(context.lastAwayMatches ?? [], awayTeamId),
+      },
+      h2h: {
+        ...analyzeH2HGoals(context.h2h ?? []),
+      },
+    }),
+  });
+
+  tools.push({
+    name: 'analyze_home_away_splits',
+    description: 'Compare how teams perform at home vs away specifically',
+    handler: () => {
+      const homeTeamHomeGames = (context.lastHomeMatches ?? []).filter(
+        (m) => m.teams.home.id === homeTeamId,
+      );
+      const homeTeamAwayGames = (context.lastHomeMatches ?? []).filter(
+        (m) => m.teams.away.id === homeTeamId,
+      );
+      const awayTeamHomeGames = (context.lastAwayMatches ?? []).filter(
+        (m) => m.teams.home.id === awayTeamId,
+      );
+      const awayTeamAwayGames = (context.lastAwayMatches ?? []).filter(
+        (m) => m.teams.away.id === awayTeamId,
+      );
+
+      return {
+        home: {
+          team: context.teams.home.name,
+          playingAt: 'home',
+          atHome: calculateTeamRecord(homeTeamHomeGames, homeTeamId),
+          atAway: calculateTeamRecord(homeTeamAwayGames, homeTeamId),
+          homeAdvantage: calculateHomeAdvantage(
+            homeTeamHomeGames,
+            homeTeamAwayGames,
+            homeTeamId,
+          ),
+        },
+        away: {
+          team: context.teams.away.name,
+          playingAt: 'away',
+          atHome: calculateTeamRecord(awayTeamHomeGames, awayTeamId),
+          atAway: calculateTeamRecord(awayTeamAwayGames, awayTeamId),
+          awayForm: calculateTeamRecord(awayTeamAwayGames, awayTeamId),
+        },
+      };
+    },
+  });
+
+  tools.push({
+    name: 'analyze_momentum',
+    description:
+      'Analyze current streaks, form momentum, and confidence levels',
+    handler: () => ({
+      home: {
+        team: context.teams.home.name,
+        ...analyzeMomentum(context.lastHomeMatches ?? [], homeTeamId),
+      },
+      away: {
+        team: context.teams.away.name,
+        ...analyzeMomentum(context.lastAwayMatches ?? [], awayTeamId),
+      },
+    }),
+  });
+
+  tools.push({
+    name: 'analyze_rest_and_schedule',
+    description: 'Check rest days since last match and schedule congestion',
+    handler: () => ({
+      home: {
+        team: context.teams.home.name,
+        restDays: homeRestDays,
+        lastMatch: getLastMatchInfo(context.lastHomeMatches ?? [], homeTeamId),
+        matchesLast30Days: countRecentMatches(
+          context.lastHomeMatches ?? [],
+          30,
+        ),
+        fatigueRisk: assessFatigueRisk(
+          homeRestDays,
+          countRecentMatches(context.lastHomeMatches ?? [], 30),
+        ),
+      },
+      away: {
+        team: context.teams.away.name,
+        restDays: awayRestDays,
+        lastMatch: getLastMatchInfo(context.lastAwayMatches ?? [], awayTeamId),
+        matchesLast30Days: countRecentMatches(
+          context.lastAwayMatches ?? [],
+          30,
+        ),
+        fatigueRisk: assessFatigueRisk(
+          awayRestDays,
+          countRecentMatches(context.lastAwayMatches ?? [], 30),
+        ),
+      },
+      advantage: getRestAdvantage(homeRestDays, awayRestDays, context.teams),
+    }),
+  });
+
   return tools;
 }
 
@@ -471,4 +589,240 @@ function wasUpset(match: KickerGPTMatchSummary): string | null {
   if (!homeWon && homeFavorite) return `${match.teams.away.name} upset`;
 
   return null;
+}
+
+// Goal Pattern Helpers
+function analyzeGoalPatterns(matches: KickerGPTMatchSummary[], teamId: number) {
+  let cleanSheets = 0,
+    failedToScore = 0;
+  let btts = 0,
+    over25 = 0;
+  let goalsScored = 0,
+    goalsConceded = 0;
+  const total = matches.length;
+
+  for (const m of matches) {
+    const isHome = m.teams.home.id === teamId;
+    const isAway = m.teams.away.id === teamId;
+    if (!isHome && !isAway) continue;
+
+    const teamGoals = isHome ? (m.goals?.home ?? 0) : (m.goals?.away ?? 0);
+    const oppGoals = isHome ? (m.goals?.away ?? 0) : (m.goals?.home ?? 0);
+
+    goalsScored += teamGoals;
+    goalsConceded += oppGoals;
+
+    if (oppGoals === 0) cleanSheets++;
+    if (teamGoals === 0) failedToScore++;
+    if (teamGoals > 0 && oppGoals > 0) btts++;
+    if (teamGoals + oppGoals > 2.5) over25++;
+  }
+
+  return {
+    cleanSheets: {
+      count: cleanSheets,
+      percentage: total ? Math.round((cleanSheets / total) * 100) : 0,
+    },
+    failedToScore: {
+      count: failedToScore,
+      percentage: total ? Math.round((failedToScore / total) * 100) : 0,
+    },
+    btts: {
+      count: btts,
+      percentage: total ? Math.round((btts / total) * 100) : 0,
+    },
+    over25: {
+      count: over25,
+      percentage: total ? Math.round((over25 / total) * 100) : 0,
+    },
+    averageScored: total ? (goalsScored / total).toFixed(2) : '0',
+    averageConceded: total ? (goalsConceded / total).toFixed(2) : '0',
+    totalMatches: total,
+  };
+}
+
+function analyzeH2HGoals(matches: KickerGPTMatchSummary[]) {
+  let btts = 0,
+    over25 = 0,
+    totalGoals = 0;
+  const total = matches.length;
+
+  for (const m of matches) {
+    const home = m.goals?.home ?? 0;
+    const away = m.goals?.away ?? 0;
+    totalGoals += home + away;
+    if (home > 0 && away > 0) btts++;
+    if (home + away > 2.5) over25++;
+  }
+
+  return {
+    btts: {
+      count: btts,
+      percentage: total ? Math.round((btts / total) * 100) : 0,
+    },
+    over25: {
+      count: over25,
+      percentage: total ? Math.round((over25 / total) * 100) : 0,
+    },
+    averageGoals: total ? (totalGoals / total).toFixed(2) : '0',
+    totalMatches: total,
+  };
+}
+
+// Momentum Helpers
+function analyzeMomentum(matches: KickerGPTMatchSummary[], teamId: number) {
+  const results: Array<'W' | 'D' | 'L'> = [];
+
+  for (const m of matches.slice(0, 10)) {
+    const result = getTeamResult(m, teamId);
+    if (result === 'win') results.push('W');
+    else if (result === 'draw') results.push('D');
+    else if (result === 'loss') results.push('L');
+  }
+
+  const currentStreak = getCurrentStreak(results);
+  const unbeatenRun = getUnbeatenRun(results);
+  const last5 = results.slice(0, 5);
+  const last5Points = last5.reduce(
+    (sum, r) => sum + (r === 'W' ? 3 : r === 'D' ? 1 : 0),
+    0,
+  );
+
+  return {
+    form: results.slice(0, 5).join('') || 'N/A',
+    currentStreak,
+    unbeatenRun,
+    last5Points: `${last5Points}/15`,
+    confidence: assessConfidence(last5Points, currentStreak),
+  };
+}
+
+function getCurrentStreak(results: Array<'W' | 'D' | 'L'>): string {
+  if (!results.length) return 'No data';
+  const first = results[0];
+  let count = 0;
+  for (const r of results) {
+    if (r === first) count++;
+    else break;
+  }
+  const label = first === 'W' ? 'wins' : first === 'D' ? 'draws' : 'losses';
+  return `${count} ${label}`;
+}
+
+function getUnbeatenRun(results: Array<'W' | 'D' | 'L'>): number {
+  let count = 0;
+  for (const r of results) {
+    if (r === 'L') break;
+    count++;
+  }
+  return count;
+}
+
+function assessConfidence(points: number, streak: string): string {
+  if (
+    points >= 12 ||
+    streak.includes('3 wins') ||
+    streak.includes('4 wins') ||
+    streak.includes('5 wins')
+  ) {
+    return 'High - team in excellent form';
+  }
+  if (points >= 9) return 'Good - solid recent performances';
+  if (points >= 6) return 'Moderate - inconsistent results';
+  if (streak.includes('losses')) return 'Low - struggling for results';
+  return 'Low - poor recent form';
+}
+
+// Rest & Schedule Helpers
+function calculateRestDays(
+  matches: KickerGPTMatchSummary[],
+  upcomingDate: string,
+): number | null {
+  if (!matches.length) return null;
+  const sorted = [...matches].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
+  const lastMatch = sorted[0];
+  if (!lastMatch) return null;
+  const last = new Date(lastMatch.date);
+  const upcoming = new Date(upcomingDate);
+  const diffMs = upcoming.getTime() - last.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+function getLastMatchInfo(matches: KickerGPTMatchSummary[], teamId: number) {
+  const sorted = [...matches].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+  );
+  const last = sorted[0];
+  if (!last) return null;
+  return {
+    date: last.date,
+    opponent:
+      last.teams.home.id === teamId
+        ? last.teams.away.name
+        : last.teams.home.name,
+    result: getTeamResult(last, teamId),
+    score: `${last.goals?.home ?? 0}-${last.goals?.away ?? 0}`,
+  };
+}
+
+function countRecentMatches(
+  matches: KickerGPTMatchSummary[],
+  days: number,
+): number {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return matches.filter((m) => new Date(m.date) >= cutoff).length;
+}
+
+function assessFatigueRisk(
+  restDays: number | null,
+  matchesLast30: number,
+): string {
+  if (restDays === null) return 'Unknown';
+  if (restDays <= 2 || matchesLast30 >= 8)
+    return 'High - limited recovery time';
+  if (restDays <= 4 || matchesLast30 >= 6) return 'Moderate - busy schedule';
+  if (restDays >= 7 && matchesLast30 <= 3) return 'Low - well rested';
+  return 'Normal';
+}
+
+function getRestAdvantage(
+  homeRest: number | null,
+  awayRest: number | null,
+  teams: { home: { name: string }; away: { name: string } },
+): string {
+  if (homeRest === null || awayRest === null)
+    return 'Unknown - insufficient data';
+  const diff = homeRest - awayRest;
+  if (Math.abs(diff) <= 1) return 'Even - similar rest periods';
+  if (diff >= 3)
+    return `${teams.home.name} has significant rest advantage (+${diff} days)`;
+  if (diff <= -3)
+    return `${teams.away.name} has significant rest advantage (+${Math.abs(diff)} days)`;
+  if (diff > 0)
+    return `${teams.home.name} slightly more rested (+${diff} days)`;
+  return `${teams.away.name} slightly more rested (+${Math.abs(diff)} days)`;
+}
+
+// Home/Away Helpers
+function calculateHomeAdvantage(
+  homeGames: KickerGPTMatchSummary[],
+  awayGames: KickerGPTMatchSummary[],
+  teamId: number,
+): string {
+  const homeRecord = calculateTeamRecord(homeGames, teamId);
+  const awayRecord = calculateTeamRecord(awayGames, teamId);
+
+  if (!homeRecord.total || !awayRecord.total) return 'Insufficient data';
+
+  const homeWinRate = homeRecord.wins / homeRecord.total;
+  const awayWinRate = awayRecord.wins / awayRecord.total;
+  const diff = homeWinRate - awayWinRate;
+
+  if (diff > 0.3) return 'Strong - significantly better at home';
+  if (diff > 0.15) return 'Moderate - noticeable home advantage';
+  if (diff > -0.1) return 'Slight - performs similarly everywhere';
+  return 'Weak - actually better away from home';
 }
