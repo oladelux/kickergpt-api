@@ -55,6 +55,7 @@ export type FixtureAnalysisContext = {
   };
   marketDrift?: ReturnType<typeof buildMarketDrift>;
   gameDayTimeAnalysis?: GameDayTimeAnalysis;
+  weatherSummary?: string | null;
 };
 
 export type GameDayTimeReference = {

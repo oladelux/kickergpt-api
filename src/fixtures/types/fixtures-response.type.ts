@@ -1,3 +1,5 @@
+import { FootballLeague } from '../../sportmonks/types/fixture';
+
 export type ApiFootballFixturePeriods = {
   first: number | null;
   second: number | null;
@@ -22,10 +24,10 @@ export type ApiFootballFixtureDetails = {
   referee: string | null;
   timezone: string;
   date: string;
-  timestamp: number;
+  timestamp: number | null;
   periods: ApiFootballFixturePeriods;
-  venue: ApiFootballFixtureVenue;
-  status: ApiFootballFixtureStatus;
+  venue: ApiFootballFixtureVenue | null;
+  status: ApiFootballFixtureStatus | null;
 };
 
 export type ApiFootballLeague = {
@@ -302,12 +304,12 @@ export type KickerGPTFixturesResponse = {
   id: number;
   timezone: string;
   date: string;
-  timestamp: number;
-  periods: ApiFootballFixturePeriods;
-  status: ApiFootballFixtureStatus;
-  league: ApiFootballLeague;
+  timestamp: number | null;
+  periods: ApiFootballFixturePeriods | null;
+  status: ApiFootballFixtureStatus | null;
+  league: ApiFootballLeague | FootballLeague;
   teams: ApiFootballTeams;
-  venue: ApiFootballFixtureVenue;
+  venue: ApiFootballFixtureVenue | null;
   derby: boolean;
   matchType: string;
   homeOdd: string | undefined;
@@ -326,11 +328,11 @@ export type KickerGPTFixturesResponse = {
 export type KickerGPTMatchSummary = {
   id: number;
   date: string;
-  timestamp: number;
-  league: ApiFootballLeague;
+  timestamp: number | null;
+  league: ApiFootballLeague | FootballLeague;
   teams: ApiFootballTeams;
-  venue: ApiFootballFixtureVenue;
-  status: ApiFootballFixtureStatus;
+  venue: ApiFootballFixtureVenue | null;
+  status: ApiFootballFixtureStatus | null;
   goals: ApiFootballGoals;
   derby: boolean;
   weatherSummary: string;
