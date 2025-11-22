@@ -3,6 +3,7 @@ import {
   HttpStatus,
   Injectable,
   InternalServerErrorException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { request as httpsRequest } from 'node:https';
@@ -25,6 +26,7 @@ import {
   SportmonksSidelined,
   SportmonksVenue,
   SportmonksWeatherReport,
+  SportmonksPagination,
 } from './types/fixture';
 import { RedisService } from '../redis/redis.service';
 import {
@@ -60,10 +62,11 @@ type WeatherTimelineResponse = {
 
 @Injectable()
 export class SportmonksService {
+  private readonly logger = new Logger(SportmonksService.name);
   private readonly apiToken: string;
   private readonly baseUrl: string;
   private readonly apiRequestIntervalMs: number;
-  private readonly fixturesCacheTtlSeconds = 60 * 60 * 24;
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 7;
   private readonly weatherApiKey?: string;
   private readonly weatherBaseUrl?: string;
   private weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
@@ -216,17 +219,89 @@ export class SportmonksService {
     );
   }
 
+  /**
+   * Fetches all pages of fixtures for a given endpoint
+   */
+  private async getAllFixtures(
+    path: string,
+    query: Record<string, string | number | undefined> = {},
+  ): Promise<SportmonksFixturesResponse> {
+    const allFixtures: SportmonksFixture[] = [];
+    let currentPage = 1;
+    let hasMore = true;
+    let timezone = '';
+    let finalPagination: SportmonksPagination | null = null;
+
+    while (hasMore) {
+      const response = await this.get<SportmonksFixturesResponse>(path, {
+        ...query,
+        page: currentPage,
+      });
+
+      // Handle cases where response or response.data is null/undefined
+      if (!response) {
+        this.logger.warn(
+          `No response from Sportmonks API at page ${currentPage} for ${path}`,
+        );
+        break;
+      }
+
+      // If data is null, undefined, or empty array, treat as no results
+      const fixtures = response.data;
+      if (!fixtures || !Array.isArray(fixtures)) {
+        this.logger.warn(
+          `No fixtures data in response at page ${currentPage} for ${path}`,
+        );
+        break;
+      }
+
+      // Collect fixtures from this page
+      if (fixtures.length > 0) {
+        allFixtures.push(...fixtures);
+      }
+
+      timezone = response.timezone || timezone;
+      finalPagination = response.pagination;
+
+      // Check if there are more pages
+      if (response.pagination?.has_more && fixtures.length > 0) {
+        currentPage++;
+        this.logger.log(`Fetching page ${currentPage} for ${path}...`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    this.logger.log(
+      `Fetched ${allFixtures.length} total fixtures from ${path}`,
+    );
+
+    // Return combined response
+    return {
+      timezone,
+      data: allFixtures,
+      pagination: {
+        count: allFixtures.length,
+        per_page: finalPagination?.per_page ?? 25,
+        current_page: 1,
+        next_page: null,
+        has_more: false,
+      },
+    };
+  }
+
   private async getFixturesByDate(
     date: string,
     timezone?: string,
   ): Promise<SportmonksFixturesResponse> {
     const resolvedTimezone = this.resolveTimezone(timezone);
-    return this.get<SportmonksFixturesResponse>(`/fixtures/date/${date}`, {
+    const result = await this.getAllFixtures(`/fixtures/date/${date}`, {
       include:
         'participants;participants.venue;odds;venue;sidelined.sideline;sidelined.player.position;sidelined.type;league.country;season;scores;referees;referees.referee;state',
       filters: 'markets:1;bookmakers:1',
       timezone: resolvedTimezone,
     });
+    return result;
   }
 
   private async buildTodayFixturesResponse(
@@ -329,13 +404,13 @@ export class SportmonksService {
           const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
             homeTeamId,
             season.starting_at,
-            season.ending_at,
+            this.getToday(),
           );
 
           const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
             awayTeamId,
             season.starting_at,
-            season.ending_at,
+            this.getToday(),
           );
 
           const lastHomeMatches = await this.buildMatchSummaries(
@@ -383,7 +458,7 @@ export class SportmonksService {
   ): Promise<SportmonksFixture[]> {
     const { homeTeamId, awayTeamId } = query;
 
-    const result = await this.get<SportmonksFixturesResponse>(
+    const result = await this.getAllFixtures(
       `/fixtures/head-to-head/${homeTeamId}/${awayTeamId}`,
       {
         include:
@@ -400,7 +475,7 @@ export class SportmonksService {
     startDate: string,
     endDate: string = this.getToday(),
   ): Promise<SportmonksFixture[]> {
-    const result = await this.get<SportmonksFixturesResponse>(
+    const result = await this.getAllFixtures(
       `/fixtures/between/${startDate}/${endDate}/${teamId}`,
       {
         include:
