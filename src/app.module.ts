@@ -29,6 +29,7 @@ import weatherConfig from './weather/config/weather.config';
 import redisConfig from './redis/config/redis.config';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
+import { AdminModule } from './admin/admin.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -92,6 +93,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     FixturesModule,
     SubscriptionsModule,
     PromptUsageModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
