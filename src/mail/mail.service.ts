@@ -176,6 +176,76 @@ export class MailService {
     });
   }
 
+  async sendFirst300Email(params: {
+    to: string;
+    name?: string;
+    surveyLink?: string;
+    promoCode?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const surveyLink = params.surveyLink;
+    const promoCode = params.promoCode || 'FIRST300';
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'first-300.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      "You're among the first 300 people using KickerGPT, and I wanted to reach out personally.",
+      "Here's the problem we're solving:",
+      "Everyone knows Man City should beat Ipswich. But sometimes they don't. And when that happens, it's not because you picked wrong—it's because there were factors you couldn't see.",
+      'Maybe City played 3 matches in 8 days. Maybe the referee has a pattern with big teams. Maybe Ipswich performs completely differently on Saturdays. Maybe the weather mirrors a past upset.',
+      "These patterns exist in the data. Most people just don't look.",
+      "That's what KickerGPT does.",
+      'We analyze 14 dimensions per match:',
+      'Head-to-head patterns',
+      'Day-of-week performance',
+      'Weather impact',
+      'Referee history with each team',
+      'Injury impact vs squad depth',
+      'Rest days and fatigue',
+      'Home/away splits',
+      'Momentum and streaks',
+      'Goal patterns (clean sheets, BTTS)',
+      'Upset history when teams are underdogs',
+      'And more...',
+      "It's not about predicting scores. It's about surfacing the insights you'd never think to look for.",
+      'We need your help.',
+      "We're still early and want to make KickerGPT genuinely useful for you. Would you take 2 minutes to share your feedback?",
+      surveyLink,
+      "And here's a thank you:",
+      'As one of our first 300, you get 90% off Pro (100 prompts/month instead of 10).',
+      `Use code: ${promoCode} at checkout.`,
+      'Thanks for being here from the start.',
+      '',
+      'KickerGPT Team',
+      "P.S. — If KickerGPT has helped you spot something you wouldn't have seen otherwise, I'd love to hear about it. Just reply to this email.",
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: "You're one of our first 300 users. Here's what that means.",
+      text: textBody,
+      templatePath,
+      context: {
+        name,
+        surveyLink,
+        promoCode,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
