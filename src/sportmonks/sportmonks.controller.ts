@@ -44,7 +44,7 @@ export class SportmonksController {
     type: SportmonksFixturesResponseDto,
   })
   @Get('today')
-  @CacheTTL(86_400)
+  @CacheTTL(14_400)
   @ApiQuery({
     name: 'timezone',
     required: false,

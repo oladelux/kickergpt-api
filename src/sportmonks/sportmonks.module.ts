@@ -11,7 +11,7 @@ import { FixturesCacheScheduler } from './fixtures-cache.scheduler';
   imports: [
     ConfigModule.forFeature(sportmonksConfig),
     CacheModule.register({
-      ttl: 86_400,
+      ttl: 14_400,
     }),
     RedisModule,
   ],
