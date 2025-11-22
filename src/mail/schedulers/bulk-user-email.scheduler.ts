@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { MailService } from '../mail.service';
@@ -11,33 +11,30 @@ export class BulkUserEmailScheduler {
   private readonly batchSize = 100;
   private readonly delayPerEmailMs = 600; // avoid rate limits
   private readonly delayBetweenBatchesMs = 1000;
-  private readonly targetDateIso = new Date(
-    new Date().toLocaleString('en-US', { timeZone: 'Europe/Berlin' }),
-  )
-    .toISOString()
-    .slice(0, 10); // lock to "today" in Berlin time at startup
+  private readonly targetDateIso: string;
   private hasRunForTargetDate = false;
 
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
     private readonly mailService: MailService,
+    private readonly schedulerRegistry: SchedulerRegistry,
   ) {}
 
-  @Cron('30 20 * * *', {
+  @Cron('00 08 * * *', {
     name: 'bulk-user-email',
     timeZone: 'Europe/Berlin',
   })
   async sendBulkUserEmail(): Promise<void> {
-    const nowDateIso = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'Europe/Berlin' }),
-    )
-      .toISOString()
+    const targetDate = '2025-11-23';
+    const todayBerlin = new Date()
+      .toLocaleString('en-US', { timeZone: 'Europe/Berlin' })
       .slice(0, 10);
 
-    if (this.hasRunForTargetDate || nowDateIso !== this.targetDateIso) {
-      return;
+    if (todayBerlin !== targetDate) {
+      return; // Not the target date yet
     }
+    this.logger.log('Starting bulk user email job...');
 
     this.logger.log('Starting bulk user email job...');
 
@@ -104,9 +101,12 @@ export class BulkUserEmailScheduler {
     }
 
     this.logger.log(
-      `Bulk user email job completed. Sent: ${totalSent}, Failed: ${totalFailed}`,
+      `Bulk email job completed. Disabling cron. Sent: ${totalSent}, Failed: ${totalFailed}`,
     );
-    this.hasRunForTargetDate = true;
+
+    // Disable this cron job permanently
+    const job = this.schedulerRegistry.getCronJob('bulk-user-email');
+    await job.stop();
   }
 
   private async delay(ms: number): Promise<void> {
