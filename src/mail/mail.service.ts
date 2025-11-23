@@ -181,14 +181,20 @@ export class MailService {
     name?: string;
     surveyLink?: string;
     promoCode?: string;
+    unsubscribeUrl?: string;
   }): Promise<void> {
     if (!this.isMailEnabled()) {
       return;
     }
 
     const name = params.name?.trim() || 'there';
-    const surveyLink = params.surveyLink;
+    const surveyLink = params.surveyLink || 'https://www.kickergpt.com/survey';
     const promoCode = params.promoCode || 'FIRST300';
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.backendDomain', {
+        infer: true,
+      })}/unsubscribe`;
 
     const templatePath = path.join(
       this.configService.getOrThrow('app.workingDirectory', {
@@ -231,6 +237,8 @@ export class MailService {
       '',
       'KickerGPT Team',
       "P.S. — If KickerGPT has helped you spot something you wouldn't have seen otherwise, I'd love to hear about it. Just reply to this email.",
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
     ].join('\n');
 
     await this.mailerService.sendMail({
@@ -238,10 +246,14 @@ export class MailService {
       subject: "You're one of our first 300 users. Here's what that means.",
       text: textBody,
       templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
       context: {
         name,
         surveyLink,
         promoCode,
+        unsubscribeUrl,
       },
     });
   }

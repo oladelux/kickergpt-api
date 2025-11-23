@@ -18,7 +18,7 @@ export class BulkUserEmailScheduler {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('33 13 * * *')
+  @Cron('33 56 * * *')
   async sendBulkUserEmail(): Promise<void> {
     this.logger.log('Starting bulk user email job...');
 
@@ -58,7 +58,7 @@ export class BulkUserEmailScheduler {
             to: user.email,
             name,
             promoCode: 'FIRST300',
-            surveyLink: 'https://form.typeform.com/to/VVskOTGX',
+            surveyLink: 'https://www.kickergpt.com/survey',
           });
           totalSent += 1;
         } catch (error) {
