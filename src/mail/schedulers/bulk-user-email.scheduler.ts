@@ -18,7 +18,7 @@ export class BulkUserEmailScheduler {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('00 12 * * *', {
+  @Cron('12 12 * * *', {
     name: 'bulk-user-email',
     timeZone: 'Europe/Berlin',
   })
