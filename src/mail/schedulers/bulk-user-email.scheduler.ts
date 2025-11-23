@@ -20,6 +20,9 @@ export class BulkUserEmailScheduler {
 
   @Cron('58 13 * * *')
   async sendBulkUserEmail(): Promise<void> {
+    this.logger.log('Bulk user email cron is disabled.');
+    return;
+
     this.logger.log('Starting bulk user email job...');
 
     let offset = 0;
@@ -55,7 +58,7 @@ export class BulkUserEmailScheduler {
 
         try {
           await this.mailService.sendFirst300Email({
-            to: user.email,
+            to: user.email as string,
             name,
             promoCode: 'FIRST300',
             surveyLink: 'https://www.kickergpt.com/survey',
