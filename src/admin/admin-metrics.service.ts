@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Between, In, Repository } from 'typeorm';
 import { UserEntity } from '../users/infrastructure/persistence/relational/entities/user.entity';
 import { FixtureChatEntity } from '../fixtures/infrastructure/persistence/relational/entities/fixture-chat.entity';
 import { PromptUsageEntity } from '../prompt-usage/infrastructure/persistence/relational/entities/prompt-usage.entity';
@@ -23,27 +23,39 @@ export class AdminMetricsService {
   ) {}
 
   async getMetrics(): Promise<AdminMetricsDto> {
-    const userCountPromise = this.userRepository.count();
-    const fixtureChatCountPromise = this.fixtureChatRepository.count();
-    const paidUserCountPromise = this.subscriptionRepository.count({
-      where: {
-        plan: SubscriptionPlan.PRO,
-        status: SubscriptionStatus.ACTIVE,
-      },
-    });
+    const windows = this.build7DayWindows();
 
-    const promptUsageAggPromise = this.promptUsageRepository
-      .createQueryBuilder('usage')
-      .select('COALESCE(SUM(usage.promptsUsed), 0)', 'totalPrompts')
-      .getRawOne();
-
-    const [userCount, fixtureChatCount, paidUserCount, promptUsageAgg] =
-      await Promise.all([
-        userCountPromise,
-        fixtureChatCountPromise,
-        paidUserCountPromise,
-        promptUsageAggPromise,
-      ]);
+    const [
+      userCount,
+      fixtureChatCount,
+      paidUserCount,
+      promptUsageAgg,
+      newUsers7d,
+      newUsersPrev7d,
+      fixtureChats7d,
+      fixtureChatsPrev7d,
+      activeUsers7d,
+      activeUsersPrev7d,
+    ] = await Promise.all([
+      this.userRepository.count(),
+      this.fixtureChatRepository.count(),
+      this.subscriptionRepository.count({
+        where: {
+          plan: SubscriptionPlan.PRO,
+          status: SubscriptionStatus.ACTIVE,
+        },
+      }),
+      this.promptUsageRepository
+        .createQueryBuilder('usage')
+        .select('COALESCE(SUM(usage.promptsUsed), 0)', 'totalPrompts')
+        .getRawOne(),
+      this.countNewUsersBetween(windows.currentStart, windows.currentEnd),
+      this.countNewUsersBetween(windows.prevStart, windows.prevEnd),
+      this.countFixtureChatsBetween(windows.currentStart, windows.currentEnd),
+      this.countFixtureChatsBetween(windows.prevStart, windows.prevEnd),
+      this.countActiveUsersBetween(windows.currentStart, windows.currentEnd),
+      this.countActiveUsersBetween(windows.prevStart, windows.prevEnd),
+    ]);
 
     const totalPromptsUsed = Number(promptUsageAgg?.totalPrompts ?? 0);
     const avgPromptUsagePerUser =
@@ -53,7 +65,19 @@ export class AdminMetricsService {
 
     return {
       userCount,
+      newUsers7d,
+      newUsersPrev7d,
+      newUsers7dChangePct: this.changePct(newUsers7d, newUsersPrev7d),
       fixtureChatCount,
+      fixtureChats7d,
+      fixtureChatsPrev7d,
+      fixtureChats7dChangePct: this.changePct(
+        fixtureChats7d,
+        fixtureChatsPrev7d,
+      ),
+      activeUsers7d,
+      activeUsersPrev7d,
+      activeUsers7dChangePct: this.changePct(activeUsers7d, activeUsersPrev7d),
       avgPromptUsagePerUser,
       paidUserCount,
       exhaustedPromptUserCount,
@@ -96,5 +120,69 @@ export class AdminMetricsService {
     }
 
     return exhausted;
+  }
+
+  private build7DayWindows(): {
+    currentStart: Date;
+    currentEnd: Date;
+    prevStart: Date;
+    prevEnd: Date;
+  } {
+    const now = new Date();
+    const currentEnd = new Date(now);
+    currentEnd.setUTCHours(23, 59, 59, 999);
+
+    const currentStart = new Date(currentEnd);
+    currentStart.setUTCDate(currentStart.getUTCDate() - 6);
+    currentStart.setUTCHours(0, 0, 0, 0);
+
+    const prevEnd = new Date(currentStart);
+    prevEnd.setUTCHours(23, 59, 59, 999);
+    prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+
+    const prevStart = new Date(prevEnd);
+    prevStart.setUTCDate(prevStart.getUTCDate() - 6);
+    prevStart.setUTCHours(0, 0, 0, 0);
+
+    return { currentStart, currentEnd, prevStart, prevEnd };
+  }
+
+  private async countNewUsersBetween(start: Date, end: Date): Promise<number> {
+    return this.userRepository.count({
+      where: {
+        createdAt: Between(start, end),
+      },
+    });
+  }
+
+  private async countFixtureChatsBetween(
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    return this.fixtureChatRepository.count({
+      where: {
+        createdAt: Between(start, end),
+      },
+    });
+  }
+
+  private async countActiveUsersBetween(
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const result = await this.fixtureChatRepository
+      .createQueryBuilder('chat')
+      .select('COUNT(DISTINCT chat.userId)', 'count')
+      .where('chat.createdAt BETWEEN :start AND :end', { start, end })
+      .getRawOne();
+
+    return Number(result?.count ?? 0);
+  }
+
+  private changePct(current: number, previous: number): number {
+    if (previous === 0) {
+      return current > 0 ? 100 : 0;
+    }
+    return ((current - previous) / previous) * 100;
   }
 }
