@@ -16,6 +16,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { buildFixtureTools } from './mcp/fixture-tools.builder';
 import { SportmonksService } from '../sportmonks/sportmonks.service';
 import { buildFollowUpSuggestions } from './follow-up-suggestions.builder';
+import { ControlRoomOutcomeDto } from './dto/control-room-outcomes.response.dto';
 
 @Injectable()
 export class FixturesAnalysisService {
@@ -117,6 +118,55 @@ export class FixturesAnalysisService {
     });
 
     return analysis;
+  }
+
+  async explainOutcomeForFixture(
+    fixtureId: number,
+    date: string,
+  ): Promise<ControlRoomOutcomeDto> {
+    const fixture = await this.sportmonksService.getSelectedControlRoomMatches(
+      fixtureId,
+      date,
+    );
+
+    if (!fixture) {
+      throw new NotFoundException(
+        `Fixture with id ${fixtureId} is not available in the cached fixtures.`,
+      );
+    }
+
+    const tools = buildFixtureTools(fixture);
+    const finalScoreText = fixture.finalScore
+      ? `${fixture.teams.home.name} ${fixture.finalScore.home} - ${fixture.finalScore.away} ${fixture.teams.away.name}`
+      : 'Final score unavailable';
+
+    const systemPrompt = `
+You are KickerGPT, an elite football analyst. Explain why the completed match ended with the observed result.
+Use the available tools to pull patterns (head-to-head, recent form, weather, day-of-week, referee history, injuries, home/away splits, momentum, rest).
+Avoid inventing data; cite the factors you find. Keep it concise in 3-6 bullet points and end with a one-line takeaway.`;
+
+    const userPrompt = `
+Match: ${fixture.teams.home.name} vs ${fixture.teams.away.name}
+Date: ${fixture.date} (${fixture.timezone})
+Result: ${finalScoreText}
+Question: Why did it end this way? Surface the key contributing factors.`;
+
+    const response = await this.openAiService.generateTextWithTools(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      tools,
+      { temperature: 0.35 },
+    );
+
+    return {
+      fixtureId: fixture.id,
+      homeTeam: fixture.teams.home.name,
+      awayTeam: fixture.teams.away.name,
+      finalScore: fixture.finalScore,
+      analysis: response.text ?? 'No analysis generated',
+    };
   }
 
   private async getCachedFixtureSnapshot(

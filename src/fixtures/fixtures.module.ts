@@ -7,6 +7,8 @@ import { FixturesController } from './fixtures.controller';
 import { FixturesService } from './fixtures.service';
 import { FixturesAnalysisController } from '../analysis/analysis.controller';
 import { FixturesAnalysisService } from '../analysis/analysis.service';
+import { ControlRoomController } from '../analysis/control-room.controller';
+import { ControlRoomGuard } from '../analysis/control-room.guard';
 import { OpenAiModule } from '../openai/openai.module';
 import { FixtureChatEntity } from './infrastructure/persistence/relational/entities/fixture-chat.entity';
 import { FixtureChatsService } from '../fixture-chats/fixture-chats.service';
@@ -31,6 +33,7 @@ import { SportmonksService } from '../sportmonks/sportmonks.service';
   controllers: [
     FixturesController,
     FixturesAnalysisController,
+    ControlRoomController,
     FixtureChatsController,
   ],
   providers: [
@@ -38,6 +41,7 @@ import { SportmonksService } from '../sportmonks/sportmonks.service';
     FixturesAnalysisService,
     FixtureChatsService,
     SportmonksService,
+    ControlRoomGuard,
   ],
 })
 export class FixturesModule {}

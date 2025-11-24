@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { request as httpsRequest } from 'node:https';
@@ -304,10 +305,36 @@ export class SportmonksService {
     return result;
   }
 
-  private async buildTodayFixturesResponse(
+  private resolveFinalScore(
+    scores: SportmonksScore[],
+  ): KickerGPTFixturesResponse['finalScore'] {
+    if (!scores || scores.length === 0) {
+      return null;
+    }
+
+    let home = 0;
+    let away = 0;
+
+    for (const score of scores) {
+      if (score.score.participant === 'home') {
+        home = Math.max(home, score.score.goals ?? 0);
+      }
+      if (score.score.participant === 'away') {
+        away = Math.max(away, score.score.goals ?? 0);
+      }
+    }
+
+    const winner =
+      home > away ? 'home' : away > home ? 'away' : ('draw' as const);
+
+    return { home, away, winner };
+  }
+
+  private async buildFixturesResponse(
+    date: string,
     timezone?: string,
   ): Promise<KickerGPTFixturesResponse[]> {
-    const result = await this.getFixturesByDate(this.getToday(), timezone);
+    const result = await this.getFixturesByDate(date, timezone);
 
     return Promise.all(
       result.data.map(
@@ -426,6 +453,7 @@ export class SportmonksService {
             timezone: result.timezone,
             date: apiFixture.starting_at,
             timestamp: apiFixture.starting_at_timestamp,
+            finalScore: this.resolveFinalScore(apiFixture.scores ?? []),
             periods: null,
             status: null,
             league: leagueResponse,
@@ -451,6 +479,13 @@ export class SportmonksService {
         },
       ),
     );
+  }
+
+  async getFixturesResponseForDate(
+    date: string,
+    timezone?: string,
+  ): Promise<KickerGPTFixturesResponse[]> {
+    return this.buildFixturesResponse(date, timezone);
   }
 
   async getHeadToHeadFixtures(
@@ -514,7 +549,7 @@ export class SportmonksService {
   }
 
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
-    const fixturesResponses = await this.buildTodayFixturesResponse();
+    const fixturesResponses = await this.buildFixturesResponse(this.getToday());
     await this.redisService.set(
       this.buildFixturesCacheKey(),
       fixturesResponses,
@@ -539,6 +574,20 @@ export class SportmonksService {
       include: 'participants;odds;venue',
       ...options,
     });
+  }
+
+  async getSelectedControlRoomMatches(
+    fixtureId: number,
+    date: string,
+  ): Promise<KickerGPTFixturesResponse | undefined> {
+    const fixtures = await this.buildFixturesResponse(date);
+    const fixture = fixtures.find((fixture) => fixture.id === fixtureId);
+    if (!fixture) {
+      throw new NotFoundException(
+        `Fixture with id ${fixtureId} is not available for the date ${date}.`,
+      );
+    }
+    return fixture;
   }
 
   async getSelectedMatches(
