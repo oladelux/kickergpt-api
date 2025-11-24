@@ -618,6 +618,7 @@ export class FixturesService {
             timezone: fixture.timezone,
             date: fixture.date,
             timestamp: fixture.timestamp,
+            finalScore: null,
             periods: fixture.periods,
             status: fixture.status,
             league,

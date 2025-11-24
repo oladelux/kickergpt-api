@@ -305,6 +305,11 @@ export type KickerGPTFixturesResponse = {
   timezone: string;
   date: string;
   timestamp: number | null;
+  finalScore: {
+    home: number;
+    away: number;
+    winner: 'home' | 'away' | 'draw';
+  } | null;
   periods: ApiFootballFixturePeriods | null;
   status: ApiFootballFixtureStatus | null;
   league: ApiFootballLeague | FootballLeague;
