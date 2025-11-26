@@ -22,4 +22,10 @@ export class ControlRoomOutcomeDto {
 
   @ApiProperty({ example: 'Team A edged it because...' })
   analysis: string;
+
+  @ApiProperty({
+    example: 'conv_abc123',
+    description: 'Use this ID for follow-up questions',
+  })
+  conversationId: string;
 }

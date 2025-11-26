@@ -1,12 +1,15 @@
 import {
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { request as httpsRequest } from 'node:https';
 import { ConfigService } from '@nestjs/config';
 import { URL } from 'node:url';
@@ -67,7 +70,8 @@ export class SportmonksService {
   private readonly apiToken: string;
   private readonly baseUrl: string;
   private readonly apiRequestIntervalMs: number;
-  private readonly fixturesCacheTtlSeconds = 60 * 60 * 7;
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 48;
+  private readonly fixturesResponseCacheTtlSeconds = 60 * 60 * 48;
   private readonly weatherApiKey?: string;
   private readonly weatherBaseUrl?: string;
   private weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
@@ -81,6 +85,7 @@ export class SportmonksService {
   constructor(
     private readonly configService: ConfigService<AllConfigType>,
     private readonly redisService: RedisService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {
     const sportmonksConfig = this.configService.getOrThrow<SportmonksConfig>(
       'sportmonks',
@@ -548,6 +553,13 @@ export class SportmonksService {
     return this.getFixturesByDate(this.getToday(), timezone);
   }
 
+  async getControlRoomFixturesOfDay(
+    date: string,
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    return this.getFixturesByDate(date, timezone);
+  }
+
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
     const fixturesResponses = await this.buildFixturesResponse(this.getToday());
     await this.redisService.set(
@@ -580,7 +592,20 @@ export class SportmonksService {
     fixtureId: number,
     date: string,
   ): Promise<KickerGPTFixturesResponse | undefined> {
-    const fixtures = await this.buildFixturesResponse(date);
+    const cacheKey = this.buildFixturesCacheKey(date);
+    const cached =
+      await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
+
+    const fixtures = cached ?? (await this.buildFixturesResponse(date));
+
+    if (!cached) {
+      await this.redisService.set(
+        cacheKey,
+        fixtures,
+        this.fixturesResponseCacheTtlSeconds,
+      );
+    }
+
     const fixture = fixtures.find((fixture) => fixture.id === fixtureId);
     if (!fixture) {
       throw new NotFoundException(
@@ -611,8 +636,8 @@ export class SportmonksService {
     return cachedFixture;
   }
 
-  private buildFixturesCacheKey(): string {
-    return `fixtures:${this.getToday()}`;
+  private buildFixturesCacheKey(date?: string): string {
+    return `fixtures:${date ?? this.getToday()}`;
   }
 
   private getToday(): string {
