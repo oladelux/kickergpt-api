@@ -57,6 +57,7 @@ export class FixturesAnalysisController {
       body.message,
       userId,
       body.tone,
+      body.conversationId,
     );
   }
 }

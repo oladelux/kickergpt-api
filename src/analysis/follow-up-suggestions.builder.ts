@@ -86,6 +86,15 @@ const FOLLOW_UP_TEMPLATES: FollowUpTemplate[] = [
   },
 ];
 
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 export function buildFollowUpSuggestions(
   context: KickerGPTFixturesResponse,
   usedDimensions?: string[],
@@ -104,6 +113,6 @@ export function buildFollowUpSuggestions(
     }));
 
   // Shuffle and pick random suggestions
-  const shuffled = available.sort(() => Math.random() - 0.5);
+  const shuffled = shuffleArray(available);
   return shuffled.slice(0, count);
 }

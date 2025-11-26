@@ -133,7 +133,7 @@ export class FixturesService {
   private readonly weatherUnitGroup: WeatherConfig['unitGroup'] = 'metric';
   private readonly teamDetailsCache = new Map<number, ApiFootballTeamDetails>();
   private readonly weatherSummaryCache = new Map<string, string | null>();
-  private readonly fixturesCacheTtlSeconds = 60 * 60 * 7;
+  private readonly fixturesCacheTtlSeconds = 60 * 60 * 48;
   private apiRequestQueue: Promise<unknown> = Promise.resolve();
 
   constructor(
@@ -618,6 +618,7 @@ export class FixturesService {
             timezone: fixture.timezone,
             date: fixture.date,
             timestamp: fixture.timestamp,
+            finalScore: null,
             periods: fixture.periods,
             status: fixture.status,
             league,
