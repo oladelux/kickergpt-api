@@ -22,4 +22,13 @@ export class CreateFixtureAnalysisDto {
   @IsOptional()
   @MaxLength(50)
   tone?: string;
+
+  @ApiProperty({
+    description: 'Optional conversation ID for follow-up questions.',
+    example: 'conv_abc123',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  conversationId?: string;
 }

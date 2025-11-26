@@ -28,6 +28,7 @@ export type FixtureAnalysis = {
   summary: string;
   metadata: FixtureAnalysisMetadata;
   followUpSuggestions?: FollowUpSuggestion[];
+  conversationId?: string;
 };
 
 export type FixtureAnalysisContext = {
