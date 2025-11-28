@@ -81,6 +81,7 @@ export class SubscriptionsService {
   async handlePlanSelection(
     userId: string,
     plan: SubscriptionPlan,
+    countryCode?: string,
   ): Promise<string | null> {
     const subscription = await this.getSubscriptionForUser(userId);
 
@@ -106,9 +107,7 @@ export class SubscriptionsService {
       throw new InternalServerErrorException('Stripe customer missing');
     }
 
-    const priceId = this.configService.getOrThrow('stripe.proPriceId', {
-      infer: true,
-    });
+    const priceId = this.getPriceIdByCountry(countryCode);
     const successUrl = this.configService.getOrThrow('stripe.successUrl', {
       infer: true,
     });
@@ -209,5 +208,78 @@ export class SubscriptionsService {
 
   private isStripeStatusActive(status: Stripe.Subscription.Status): boolean {
     return status === 'active' || status === 'trialing';
+  }
+
+  /**
+   * Get the appropriate Stripe price ID based on user's country code.
+   * - US: USD price
+   * - European countries: EUR price
+   * - Nigeria: NGN price
+   * - United Kingdom: GBP price
+   * - Default: USD price
+   */
+  private getPriceIdByCountry(countryCode?: string): string {
+    if (!countryCode) {
+      return this.configService.getOrThrow('stripe.proPriceIdUsd', {
+        infer: true,
+      });
+    }
+
+    const normalizedCountry = countryCode.toUpperCase();
+
+    // Nigeria
+    if (normalizedCountry === 'NG') {
+      return this.configService.getOrThrow('stripe.proPriceIdNgn', {
+        infer: true,
+      });
+    }
+
+    // Nigeria
+    if (normalizedCountry === 'GB') {
+      return this.configService.getOrThrow('stripe.proPriceIdGbp', {
+        infer: true,
+      });
+    }
+
+    // European countries using EUR
+    const europeanCountries = [
+      'AT', // Austria
+      'BE', // Belgium
+      'CY', // Cyprus
+      'EE', // Estonia
+      'FI', // Finland
+      'FR', // France
+      'DE', // Germany
+      'GR', // Greece
+      'IE', // Ireland
+      'IT', // Italy
+      'LV', // Latvia
+      'LT', // Lithuania
+      'LU', // Luxembourg
+      'MT', // Malta
+      'NL', // Netherlands
+      'PT', // Portugal
+      'SK', // Slovakia
+      'SI', // Slovenia
+      'ES', // Spain
+    ];
+
+    if (europeanCountries.includes(normalizedCountry)) {
+      return this.configService.getOrThrow('stripe.proPriceIdEur', {
+        infer: true,
+      });
+    }
+
+    // United States
+    if (normalizedCountry === 'US') {
+      return this.configService.getOrThrow('stripe.proPriceIdUsd', {
+        infer: true,
+      });
+    }
+
+    // Default to USD for all other countries
+    return this.configService.getOrThrow('stripe.proPriceIdUsd', {
+      infer: true,
+    });
   }
 }
