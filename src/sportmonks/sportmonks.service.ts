@@ -435,22 +435,24 @@ export class SportmonksService {
 
           const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
             homeTeamId,
-            season.starting_at,
+            this.formatDateToYMD(season.starting_at),
             this.getToday(),
           );
 
           const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
             awayTeamId,
-            season.starting_at,
+            this.formatDateToYMD(season.starting_at),
             this.getToday(),
           );
 
           const lastHomeMatches = await this.buildMatchSummaries(
             lastHomeMatchesResults,
+            `Fixture ${apiFixture.id} home form`,
           );
 
           const lastAwayMatches = await this.buildMatchSummaries(
             lastAwayMatchesResults,
+            `Fixture ${apiFixture.id} away form`,
           );
 
           return {
@@ -648,6 +650,32 @@ export class SportmonksService {
     return `${now.getFullYear()}-${month}-${day}`;
   }
 
+  /**
+   * Formats a date string or Date object to YYYY-MM-DD format
+   * Handles various input formats including ISO strings with timestamps
+   */
+  private formatDateToYMD(dateInput: string | Date | null | undefined): string {
+    // Handle null/undefined inputs
+    if (!dateInput) {
+      return this.getToday();
+    }
+
+    const date =
+      typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      this.logger.warn(`Invalid date input: ${dateInput}, using today`);
+      return this.getToday();
+    }
+
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  }
+
   private resolveTimezone(timezone?: string): string {
     const trimmed = timezone?.trim();
 
@@ -742,11 +770,20 @@ export class SportmonksService {
     }
 
     try {
-      const response = await this.fetchExternalWeatherTimeline(location, date);
+      const response = await this.fetchExternalWeatherTimeline(
+        location,
+        date,
+        8000,
+      );
       const summary = this.formatExternalWeatherSummary(response?.days?.[0]);
       this.externalWeatherSummaryCache.set(cacheKey, summary ?? null);
       return summary ?? null;
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `[Weather ${fixture.id}] external lookup failed: ${
+          (error as Error)?.message ?? 'unknown'
+        }`,
+      );
       this.externalWeatherSummaryCache.set(cacheKey, null);
       return null;
     }
@@ -802,6 +839,7 @@ export class SportmonksService {
   private async fetchExternalWeatherTimeline(
     location: string,
     date: string,
+    timeoutMs = 8000,
   ): Promise<WeatherTimelineResponse | null> {
     if (!this.weatherBaseUrl || !this.weatherApiKey) {
       return null;
@@ -819,6 +857,7 @@ export class SportmonksService {
         Accept: 'application/json',
       },
       'Weather provider request failed.',
+      timeoutMs,
     );
   }
 
@@ -870,6 +909,7 @@ export class SportmonksService {
     url: URL,
     headers: Record<string, string>,
     errorMessage: string,
+    timeoutMs = 8000,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const request = httpsRequest(
@@ -924,6 +964,15 @@ export class SportmonksService {
       request.on('error', (error) => {
         reject(
           new InternalServerErrorException(`${errorMessage} ${error.message}`),
+        );
+      });
+
+      request.setTimeout(timeoutMs, () => {
+        request.destroy();
+        reject(
+          new InternalServerErrorException(
+            `${errorMessage} Request timed out after ${timeoutMs}ms`,
+          ),
         );
       });
 
@@ -1061,7 +1110,10 @@ export class SportmonksService {
 
   private async buildMatchSummaries(
     fixtures: SportmonksFixture[],
+    context?: string,
   ): Promise<KickerGPTMatchSummary[]> {
+    const ctx = context ?? 'summaries';
+    this.logger.log(`[${ctx}] start for ${fixtures.length} matches`);
     return Promise.all(
       fixtures.map(async (result) => {
         const {
@@ -1078,6 +1130,7 @@ export class SportmonksService {
           weatherreport,
           result,
         );
+        this.logger.log(`[${ctx}] summarized match ${result.id}`);
 
         return {
           id: result.id,
