@@ -11,7 +11,16 @@ class EnvironmentVariablesValidator {
   STRIPE_WEBHOOK_SECRET: string;
 
   @IsString()
-  STRIPE_PRO_PRICE_ID: string;
+  STRIPE_PRO_USD_PRICE_ID: string;
+
+  @IsString()
+  STRIPE_PRO_EUR_PRICE_ID: string;
+
+  @IsString()
+  STRIPE_PRO_NGN_PRICE_ID: string;
+
+  @IsString()
+  STRIPE_PRO_GBP_PRICE_ID: string;
 
   @IsString()
   STRIPE_SUCCESS_URL: string;
@@ -26,7 +35,10 @@ export default registerAs<StripeConfig>('stripe', () => {
   return {
     secret: process.env.STRIPE_SECRET_KEY as string,
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET as string,
-    proPriceId: process.env.STRIPE_PRO_PRICE_ID as string,
+    proPriceIdUsd: process.env.STRIPE_PRO_USD_PRICE_ID as string,
+    proPriceIdEur: process.env.STRIPE_PRO_EUR_PRICE_ID as string,
+    proPriceIdNgn: process.env.STRIPE_PRO_NGN_PRICE_ID as string,
+    proPriceIdGbp: process.env.STRIPE_PRO_GBP_PRICE_ID as string,
     successUrl: process.env.STRIPE_SUCCESS_URL as string,
     cancelUrl: process.env.STRIPE_CANCEL_URL as string,
   };
