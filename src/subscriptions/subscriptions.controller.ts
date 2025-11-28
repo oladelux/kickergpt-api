@@ -46,6 +46,7 @@ export class SubscriptionsController {
     const checkoutUrl = await this.subscriptionsService.handlePlanSelection(
       request.user.id,
       dto.plan,
+      dto.countryCode,
     );
 
     return { checkoutUrl };
