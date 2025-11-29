@@ -49,22 +49,22 @@ const FOLLOW_UP_TEMPLATES: FollowUpTemplate[] = [
     id: 'goals',
     question: 'What are the chances both teams score?',
     checkAvailability: (ctx) =>
-      (ctx.lastHomeMatches?.length ?? 0) > 0 ||
-      (ctx.lastAwayMatches?.length ?? 0) > 0,
+      (ctx.homeTeamRecentMatches?.length ?? 0) > 0 ||
+      (ctx.awayTeamRecentMatches?.length ?? 0) > 0,
   },
   {
     id: 'momentum',
     question: 'Which team has better momentum right now?',
     checkAvailability: (ctx) =>
-      (ctx.lastHomeMatches?.length ?? 0) > 0 ||
-      (ctx.lastAwayMatches?.length ?? 0) > 0,
+      (ctx.homeTeamRecentMatches?.length ?? 0) > 0 ||
+      (ctx.awayTeamRecentMatches?.length ?? 0) > 0,
   },
   {
     id: 'fatigue',
     question: 'Is fixture congestion a factor for either team?',
     checkAvailability: (ctx) =>
-      (ctx.lastHomeMatches?.length ?? 0) > 2 ||
-      (ctx.lastAwayMatches?.length ?? 0) > 2,
+      (ctx.homeTeamRecentMatches?.length ?? 0) > 2 ||
+      (ctx.awayTeamRecentMatches?.length ?? 0) > 2,
   },
   {
     id: 'upset',
@@ -75,8 +75,8 @@ const FOLLOW_UP_TEMPLATES: FollowUpTemplate[] = [
     id: 'clean_sheet',
     question: 'How likely is a clean sheet for either side?',
     checkAvailability: (ctx) =>
-      (ctx.lastHomeMatches?.length ?? 0) > 0 ||
-      (ctx.lastAwayMatches?.length ?? 0) > 0,
+      (ctx.homeTeamRecentMatches?.length ?? 0) > 0 ||
+      (ctx.awayTeamRecentMatches?.length ?? 0) > 0,
   },
   {
     id: 'news',
