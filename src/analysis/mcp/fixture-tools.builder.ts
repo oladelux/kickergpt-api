@@ -24,19 +24,19 @@ export function buildFixtureTools(
 
   const allMatches = [
     ...(context.h2h ?? []),
-    ...(context.lastHomeMatches ?? []),
-    ...(context.lastAwayMatches ?? []),
+    ...(context.homeTeamRecentMatches ?? []),
+    ...(context.awayTeamRecentMatches ?? []),
   ];
 
   const homeTeamId = context.teams.home.id;
   const awayTeamId = context.teams.away.id;
 
   const homeRestDays = calculateRestDays(
-    context.lastHomeMatches ?? [],
+    context.homeTeamRecentMatches ?? [],
     context.date,
   );
   const awayRestDays = calculateRestDays(
-    context.lastAwayMatches ?? [],
+    context.awayTeamRecentMatches ?? [],
     context.date,
   );
 
@@ -75,11 +75,11 @@ export function buildFixtureTools(
     handler: () => ({
       home: {
         team: context.teams.home.name,
-        matches: context.lastHomeMatches ?? [],
+        matches: context.homeTeamRecentMatches ?? [],
       },
       away: {
         team: context.teams.away.name,
-        matches: context.lastAwayMatches ?? [],
+        matches: context.awayTeamRecentMatches ?? [],
       },
     }),
   });
@@ -205,8 +205,8 @@ export function buildFixtureTools(
     description:
       'Analyze how teams perform relative to betting odds - upsets, favorites, underdogs',
     handler: () => {
-      const homeMatches = context.lastHomeMatches ?? [];
-      const awayMatches = context.lastAwayMatches ?? [];
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
       const h2hMatches = context.h2h ?? [];
 
       return {
@@ -284,27 +284,31 @@ export function buildFixtureTools(
         recentPerformance: {
           home: {
             team: context.teams.home.name,
-            results: (context.lastHomeMatches ?? []).slice(0, 5).map((m) => ({
-              date: m.date,
-              opponent:
-                m.teams.home.id === homeTeamId
-                  ? m.teams.away.name
-                  : m.teams.home.name,
-              goals: m.goals,
-              result: getTeamResult(m, homeTeamId),
-            })),
+            results: (context.homeTeamRecentMatches ?? [])
+              .slice(0, 5)
+              .map((m) => ({
+                date: m.date,
+                opponent:
+                  m.teams.home.id === homeTeamId
+                    ? m.teams.away.name
+                    : m.teams.home.name,
+                goals: m.goals,
+                result: getTeamResult(m, homeTeamId),
+              })),
           },
           away: {
             team: context.teams.away.name,
-            results: (context.lastAwayMatches ?? []).slice(0, 5).map((m) => ({
-              date: m.date,
-              opponent:
-                m.teams.home.id === awayTeamId
-                  ? m.teams.away.name
-                  : m.teams.home.name,
-              goals: m.goals,
-              result: getTeamResult(m, awayTeamId),
-            })),
+            results: (context.awayTeamRecentMatches ?? [])
+              .slice(0, 5)
+              .map((m) => ({
+                date: m.date,
+                opponent:
+                  m.teams.home.id === awayTeamId
+                    ? m.teams.away.name
+                    : m.teams.home.name,
+                goals: m.goals,
+                result: getTeamResult(m, awayTeamId),
+              })),
           },
         },
         advantage: getInjuryAdvantage(homeCount, awayCount, context.teams),
@@ -319,11 +323,11 @@ export function buildFixtureTools(
     handler: () => ({
       home: {
         team: context.teams.home.name,
-        ...analyzeGoalPatterns(context.lastHomeMatches ?? [], homeTeamId),
+        ...analyzeGoalPatterns(context.homeTeamRecentMatches ?? [], homeTeamId),
       },
       away: {
         team: context.teams.away.name,
-        ...analyzeGoalPatterns(context.lastAwayMatches ?? [], awayTeamId),
+        ...analyzeGoalPatterns(context.awayTeamRecentMatches ?? [], awayTeamId),
       },
       h2h: {
         ...analyzeH2HGoals(context.h2h ?? []),
@@ -335,16 +339,16 @@ export function buildFixtureTools(
     name: 'analyze_home_away_splits',
     description: 'Compare how teams perform at home vs away specifically',
     handler: () => {
-      const homeTeamHomeGames = (context.lastHomeMatches ?? []).filter(
+      const homeTeamHomeGames = (context.homeTeamRecentMatches ?? []).filter(
         (m) => m.teams.home.id === homeTeamId,
       );
-      const homeTeamAwayGames = (context.lastHomeMatches ?? []).filter(
+      const homeTeamAwayGames = (context.homeTeamRecentMatches ?? []).filter(
         (m) => m.teams.away.id === homeTeamId,
       );
-      const awayTeamHomeGames = (context.lastAwayMatches ?? []).filter(
+      const awayTeamHomeGames = (context.awayTeamRecentMatches ?? []).filter(
         (m) => m.teams.home.id === awayTeamId,
       );
-      const awayTeamAwayGames = (context.lastAwayMatches ?? []).filter(
+      const awayTeamAwayGames = (context.awayTeamRecentMatches ?? []).filter(
         (m) => m.teams.away.id === awayTeamId,
       );
 
@@ -378,11 +382,11 @@ export function buildFixtureTools(
     handler: () => ({
       home: {
         team: context.teams.home.name,
-        ...analyzeMomentum(context.lastHomeMatches ?? [], homeTeamId),
+        ...analyzeMomentum(context.homeTeamRecentMatches ?? [], homeTeamId),
       },
       away: {
         team: context.teams.away.name,
-        ...analyzeMomentum(context.lastAwayMatches ?? [], awayTeamId),
+        ...analyzeMomentum(context.awayTeamRecentMatches ?? [], awayTeamId),
       },
     }),
   });
@@ -394,27 +398,33 @@ export function buildFixtureTools(
       home: {
         team: context.teams.home.name,
         restDays: homeRestDays,
-        lastMatch: getLastMatchInfo(context.lastHomeMatches ?? [], homeTeamId),
+        lastMatch: getLastMatchInfo(
+          context.homeTeamRecentMatches ?? [],
+          homeTeamId,
+        ),
         matchesLast30Days: countRecentMatches(
-          context.lastHomeMatches ?? [],
+          context.homeTeamRecentMatches ?? [],
           30,
         ),
         fatigueRisk: assessFatigueRisk(
           homeRestDays,
-          countRecentMatches(context.lastHomeMatches ?? [], 30),
+          countRecentMatches(context.homeTeamRecentMatches ?? [], 30),
         ),
       },
       away: {
         team: context.teams.away.name,
         restDays: awayRestDays,
-        lastMatch: getLastMatchInfo(context.lastAwayMatches ?? [], awayTeamId),
+        lastMatch: getLastMatchInfo(
+          context.awayTeamRecentMatches ?? [],
+          awayTeamId,
+        ),
         matchesLast30Days: countRecentMatches(
-          context.lastAwayMatches ?? [],
+          context.awayTeamRecentMatches ?? [],
           30,
         ),
         fatigueRisk: assessFatigueRisk(
           awayRestDays,
-          countRecentMatches(context.lastAwayMatches ?? [], 30),
+          countRecentMatches(context.awayTeamRecentMatches ?? [], 30),
         ),
       },
       advantage: getRestAdvantage(homeRestDays, awayRestDays, context.teams),
