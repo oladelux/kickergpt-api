@@ -5,7 +5,6 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
-  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -31,6 +30,7 @@ import {
   SportmonksVenue,
   SportmonksWeatherReport,
   SportmonksPagination,
+  SportmonksLineup,
 } from './types/fixture';
 import { RedisService } from '../redis/redis.service';
 import {
@@ -40,6 +40,7 @@ import {
   KickerGPTFixturesResponse,
   KickerGPTInjuryPlayerFlag,
   KickerGPTMatchSummary,
+  KickerGPTPlayerRating,
 } from '../fixtures/types/fixtures-response.type';
 
 type HeadToHeadQuery = {
@@ -510,8 +511,8 @@ export class SportmonksService {
       `/fixtures/head-to-head/${homeTeamId}/${awayTeamId}`,
       {
         include:
-          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state',
-        filters: 'markets:1;bookmakers:1',
+          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state;lineups.details.type',
+        filters: 'markets:1;bookmakers:1;lineupDetailTypes:118',
       },
     );
 
@@ -527,8 +528,8 @@ export class SportmonksService {
       `/fixtures/between/${startDate}/${endDate}/${teamId}`,
       {
         include:
-          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state',
-        filters: 'markets:1;bookmakers:1',
+          'participants;participants.venue;odds;venue;scores;referees;referees.referee;formations;weatherReport;sidelined.sideline;sidelined.player.position;sidelined.type;league;league.country;season;state;lineups.details.type',
+        filters: 'markets:1;bookmakers:1;lineupDetailTypes:118',
       },
     );
 
@@ -568,13 +569,46 @@ export class SportmonksService {
     return this.getFixturesByDate(date, timezone);
   }
 
+  private buildSingleFixtureCacheKey(fixtureId: number, date?: string): string {
+    return `fixture:${date ?? this.getToday()}:${fixtureId}`;
+  }
+
+  private buildFixturesIdsCacheKey(date?: string): string {
+    return `fixtures:ids:${date ?? this.getToday()}`;
+  }
+
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
     const fixturesResponses = await this.buildFixturesResponse(this.getToday());
-    await this.redisService.set(
-      this.buildFixturesCacheKey(),
-      fixturesResponses,
-      this.fixturesCacheTtlSeconds,
+
+    if (fixturesResponses.length === 0) {
+      return [];
+    }
+
+    const today = this.getToday();
+    const fixtureIds: number[] = [];
+
+    // Store each fixture separately using pipeline for efficiency
+    const pipeline = this.redisService.pipeline();
+
+    for (const fixture of fixturesResponses) {
+      const key = this.buildSingleFixtureCacheKey(fixture.id, today);
+      pipeline?.set(key, JSON.stringify(fixture), {
+        ex: this.fixturesCacheTtlSeconds,
+      });
+      fixtureIds.push(fixture.id);
+    }
+
+    // Store the list of fixture IDs (very small, just numbers)
+    pipeline?.set(this.buildFixturesIdsCacheKey(), JSON.stringify(fixtureIds), {
+      ex: this.fixturesCacheTtlSeconds,
+    });
+
+    await pipeline?.exec();
+
+    this.logger.log(
+      `Cached ${fixturesResponses.length} fixtures individually for ${today}`,
     );
+
     return fixturesResponses;
   }
 
@@ -582,71 +616,163 @@ export class SportmonksService {
     date: string,
     options: SportmonksFixturesRequestOptions = {},
   ): Promise<SportmonksFixturesResponse | undefined> {
-    const cacheKey = this.buildFixturesCacheKey();
-    const cached =
-      await this.redisService.get<SportmonksFixturesResponse>(cacheKey);
+    const cacheKey = this.buildFixturesIdsCacheKey(date);
+    const cached = await this.redisService.get<string>(cacheKey);
+
     if (!cached) {
       throw new ServiceUnavailableException(
         'Fixtures cache is not available yet. Please try again shortly.',
       );
     }
+
     return this.get<SportmonksFixturesResponse>(`/fixtures/date/${date}`, {
       include: 'participants;odds;venue',
       ...options,
     });
   }
 
+  async getCachedFixturesForDate(
+    date: string,
+  ): Promise<KickerGPTFixturesResponse[]> {
+    const idsKey = this.buildFixturesIdsCacheKey(date);
+    const idsJson = await this.redisService.get<string>(idsKey);
+
+    if (!idsJson) {
+      return [];
+    }
+
+    let fixtureIds: number[];
+    try {
+      fixtureIds =
+        typeof idsJson === 'object'
+          ? (idsJson as unknown as number[])
+          : JSON.parse(idsJson);
+    } catch {
+      this.logger.warn(`Failed to parse fixture IDs for date ${date}`);
+      return [];
+    }
+
+    if (fixtureIds.length === 0) {
+      return [];
+    }
+
+    const fixtures: KickerGPTFixturesResponse[] = [];
+
+    // Fetch all fixtures using pipeline
+    const pipeline = this.redisService.pipeline();
+    for (const id of fixtureIds) {
+      pipeline?.get(this.buildSingleFixtureCacheKey(id, date));
+    }
+
+    const results = await pipeline?.exec();
+
+    if (results) {
+      for (const result of results) {
+        if (result) {
+          try {
+            const fixture =
+              typeof result === 'object'
+                ? (result as unknown as KickerGPTFixturesResponse)
+                : (JSON.parse(result as string) as KickerGPTFixturesResponse);
+            fixtures.push(fixture);
+          } catch {
+            // Skip invalid entries
+          }
+        }
+      }
+    }
+
+    return fixtures;
+  }
+
   async getSelectedControlRoomMatches(
     fixtureId: number,
     date: string,
   ): Promise<KickerGPTFixturesResponse | undefined> {
-    const cacheKey = this.buildFixturesCacheKey(date);
-    const cached =
-      await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
+    const key = this.buildSingleFixtureCacheKey(fixtureId, date);
 
-    const fixtures = cached ?? (await this.buildFixturesResponse(date));
+    // Try to get from cache first
+    const cached = await this.redisService.get<string>(key);
 
-    if (!cached) {
-      await this.redisService.set(
-        cacheKey,
-        fixtures,
-        this.fixturesResponseCacheTtlSeconds,
-      );
+    if (cached) {
+      try {
+        // Handle case where Redis returns already parsed object
+        if (typeof cached === 'object') {
+          return cached as unknown as KickerGPTFixturesResponse;
+        }
+        return JSON.parse(cached) as KickerGPTFixturesResponse;
+      } catch {
+        this.logger.warn(
+          `Failed to parse fixture ${fixtureId} for date ${date} from cache`,
+        );
+      }
     }
 
-    const fixture = fixtures.find((fixture) => fixture.id === fixtureId);
-    if (!fixture) {
-      throw new NotFoundException(
-        `Fixture with id ${fixtureId} is not available for the date ${date}.`,
-      );
+    // Not in cache - fetch all fixtures for that date and cache them
+    this.logger.log(
+      `Fixture ${fixtureId} not in cache, fetching fixtures for ${date}`,
+    );
+
+    const fixturesResponses = await this.buildFixturesResponse(date);
+
+    if (fixturesResponses.length === 0) {
+      return undefined;
     }
-    return fixture;
+
+    // Store all fixtures individually using pipeline
+    const pipeline = this.redisService.pipeline();
+    const fixtureIds: number[] = [];
+
+    for (const fixture of fixturesResponses) {
+      const fixtureKey = this.buildSingleFixtureCacheKey(fixture.id, date);
+      pipeline?.set(fixtureKey, JSON.stringify(fixture), {
+        ex: this.fixturesResponseCacheTtlSeconds,
+      });
+      fixtureIds.push(fixture.id);
+    }
+
+    // Store the list of fixture IDs for that date
+    pipeline?.set(
+      this.buildFixturesIdsCacheKey(date),
+      JSON.stringify(fixtureIds),
+      { ex: this.fixturesResponseCacheTtlSeconds },
+    );
+
+    await pipeline?.exec();
+
+    this.logger.log(
+      `Cached ${fixturesResponses.length} fixtures individually for ${date}`,
+    );
+
+    // Find and return the requested fixture
+    return fixturesResponses.find((f) => f.id === fixtureId);
   }
 
   async getSelectedMatches(
     fixtureId: number,
   ): Promise<KickerGPTFixturesResponse | undefined> {
-    const cacheKey = this.buildFixturesCacheKey();
-    let cached =
-      await this.redisService.get<KickerGPTFixturesResponse[]>(cacheKey);
+    const key = this.buildSingleFixtureCacheKey(fixtureId);
+    const fixtureJson = await this.redisService.get<string>(key);
 
-    if (!cached) {
-      // Warm the cache on-demand if the scheduler hasn't populated it yet.
-      cached = await this.getTodayFixturesForRedis();
+    if (fixtureJson) {
+      try {
+        // Handle case where Redis returns already parsed object
+        if (typeof fixtureJson === 'object') {
+          return fixtureJson as unknown as KickerGPTFixturesResponse;
+        }
+        return JSON.parse(fixtureJson) as KickerGPTFixturesResponse;
+      } catch {
+        this.logger.warn(`Failed to parse fixture ${fixtureId} from cache`);
+      }
     }
 
-    const cachedFixture = cached.find((fixture) => fixture.id === fixtureId);
-    if (!cachedFixture) {
-      throw new ServiceUnavailableException(
-        'Fixtures cache is not available yet. Please try again shortly.',
-      );
-    }
-    return cachedFixture;
+    return undefined;
   }
 
-  private buildFixturesCacheKey(date?: string): string {
-    return `fixtures:${date ?? this.getToday()}`;
-  }
+  // REMOVE or rename the old buildFixturesCacheKey - it was conflicting
+  // private buildFixturesCacheKey(date?: string): string {
+  //   return `fixtures:${date ?? this.getToday()}`;
+  // }
 
   private getToday(): string {
     const now = new Date();
@@ -1135,10 +1261,23 @@ export class SportmonksService {
           venue,
           referees,
           scores,
+          lineups,
         } = result;
 
         const homeTeam = participants.find((p) => p.meta?.location === 'home');
         const awayTeam = participants.find((p) => p.meta?.location === 'away');
+
+        const homeTeamId = homeTeam?.id ?? participants[0].id;
+        const awayTeamId = awayTeam?.id ?? participants[1].id;
+
+        // Extract ratings if lineups exist
+        const ratings =
+          lineups && lineups.length > 0
+            ? {
+                home: this.extractPlayerRatings(lineups, homeTeamId),
+                away: this.extractPlayerRatings(lineups, awayTeamId),
+              }
+            : undefined;
 
         const weatherSummary = await this.resolveWeatherSummary(
           weatherreport,
@@ -1161,8 +1300,58 @@ export class SportmonksService {
             referees.length > 0
               ? (referees[0].referee.display_name ?? 'unknown')
               : 'unknown',
+          ratings,
         };
       }),
     );
+  }
+
+  private extractPlayerRatings(
+    lineups: SportmonksLineup[],
+    teamId: number,
+  ): { players: KickerGPTPlayerRating[]; teamAverage: number | null } {
+    const teamLineups = lineups.filter((l) => l.team_id === teamId);
+
+    const players: KickerGPTPlayerRating[] = [];
+
+    for (const lineup of teamLineups) {
+      // Find the rating detail - typically has type.code === 'rating' or type.developer_name includes 'rating'
+      const ratingDetail = lineup.details?.find(
+        (d) =>
+          d.type?.code?.toLowerCase() === 'rating' ||
+          d.type?.developer_name?.toLowerCase().includes('rating'),
+      );
+
+      if (ratingDetail && ratingDetail.data?.value != null) {
+        const ratingValue =
+          typeof ratingDetail.data.value === 'string'
+            ? parseFloat(ratingDetail.data.value)
+            : ratingDetail.data.value;
+
+        if (!isNaN(ratingValue)) {
+          players.push({
+            playerId: lineup.player_id,
+            playerName: lineup.player_name,
+            rating: ratingValue,
+            position: lineup.formation_field ?? undefined,
+          });
+        }
+      }
+    }
+
+    // Calculate team average
+    const validRatings = players
+      .filter((p) => p.rating !== null)
+      .map((p) => p.rating!);
+    const teamAverage =
+      validRatings.length > 0
+        ? parseFloat(
+            (
+              validRatings.reduce((sum, r) => sum + r, 0) / validRatings.length
+            ).toFixed(2),
+          )
+        : null;
+
+    return { players, teamAverage };
   }
 }

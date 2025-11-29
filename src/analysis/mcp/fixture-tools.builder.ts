@@ -1,6 +1,7 @@
 import { OpenAiToolDefinition } from '../../openai/openai.service';
 import {
   KickerGPTFixturesResponse,
+  KickerGPTInjuryPlayerFlag,
   KickerGPTMatchSummary,
 } from '../../fixtures/types/fixtures-response.type';
 
@@ -431,6 +432,135 @@ export function buildFixtureTools(
     }),
   });
 
+  tools.push({
+    name: 'analyze_injured_player_impact',
+    description:
+      'Assess the impact of injured players based on their historical ratings and importance to the team',
+    handler: () => {
+      const homeInjuries = context.homeInjuries ?? [];
+      const awayInjuries = context.awayInjuries ?? [];
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
+
+      // Calculate injured player ratings from recent matches
+      const homeInjuredImpact = analyzeInjuredPlayersRatings(
+        homeInjuries,
+        homeMatches,
+        homeTeamId,
+      );
+      const awayInjuredImpact = analyzeInjuredPlayersRatings(
+        awayInjuries,
+        awayMatches,
+        awayTeamId,
+      );
+
+      return {
+        home: {
+          team: context.teams.home.name,
+          injuredCount: homeInjuries.length,
+          impactAnalysis: homeInjuredImpact,
+        },
+        away: {
+          team: context.teams.away.name,
+          injuredCount: awayInjuries.length,
+          impactAnalysis: awayInjuredImpact,
+        },
+        comparison: getInjuryImpactComparison(
+          homeInjuredImpact,
+          awayInjuredImpact,
+          context.teams,
+        ),
+      };
+    },
+  });
+
+  tools.push({
+    name: 'analyze_team_rating_trajectory',
+    description:
+      'Analyze team performance quality trends based on player ratings over recent matches - are they improving, declining, or stable?',
+    handler: () => {
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
+
+      const homeTrajectory = calculateRatingTrajectory(homeMatches, homeTeamId);
+      const awayTrajectory = calculateRatingTrajectory(awayMatches, awayTeamId);
+
+      return {
+        home: {
+          team: context.teams.home.name,
+          ...homeTrajectory,
+        },
+        away: {
+          team: context.teams.away.name,
+          ...awayTrajectory,
+        },
+        qualityComparison: getRatingQualityComparison(
+          homeTrajectory,
+          awayTrajectory,
+          context.teams,
+        ),
+      };
+    },
+  });
+
+  tools.push({
+    name: 'analyze_h2h_ratings',
+    description:
+      'Analyze head-to-head matches by team rating performance - which team typically performs better quality-wise in these fixtures?',
+    handler: () => {
+      const h2h = context.h2h ?? [];
+
+      if (h2h.length === 0) {
+        return { available: false, message: 'No H2H history available' };
+      }
+
+      const h2hRatingAnalysis = analyzeH2HRatings(h2h, homeTeamId, awayTeamId);
+
+      return {
+        totalMeetings: h2h.length,
+        matchesWithRatings: h2hRatingAnalysis.matchesWithRatings,
+        home: {
+          team: context.teams.home.name,
+          averageRating: h2hRatingAnalysis.homeAvgRating,
+          bestPerformance: h2hRatingAnalysis.homeBest,
+          worstPerformance: h2hRatingAnalysis.homeWorst,
+        },
+        away: {
+          team: context.teams.away.name,
+          averageRating: h2hRatingAnalysis.awayAvgRating,
+          bestPerformance: h2hRatingAnalysis.awayBest,
+          worstPerformance: h2hRatingAnalysis.awayWorst,
+        },
+        h2hQualityWinner: h2hRatingAnalysis.qualityWinner,
+        insight: h2hRatingAnalysis.insight,
+      };
+    },
+  });
+
+  tools.push({
+    name: 'get_top_performers',
+    description:
+      'Get the top-rated players from recent matches for both teams - identifies key players to watch',
+    handler: () => {
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
+
+      const homeTopPerformers = getTopPerformers(homeMatches, homeTeamId, 5);
+      const awayTopPerformers = getTopPerformers(awayMatches, awayTeamId, 5);
+
+      return {
+        home: {
+          team: context.teams.home.name,
+          topPlayers: homeTopPerformers,
+        },
+        away: {
+          team: context.teams.away.name,
+          topPlayers: awayTopPerformers,
+        },
+      };
+    },
+  });
+
   return tools;
 }
 
@@ -835,4 +965,429 @@ function calculateHomeAdvantage(
   if (diff > 0.15) return 'Moderate - noticeable home advantage';
   if (diff > -0.1) return 'Slight - performs similarly everywhere';
   return 'Weak - actually better away from home';
+}
+
+// Add these helper functions to the same file
+
+interface InjuredPlayerImpact {
+  highImpactMissing: Array<{
+    name: string;
+    avgRating: number;
+    matchesRated: number;
+  }>;
+  moderateImpactMissing: Array<{
+    name: string;
+    avgRating: number;
+    matchesRated: number;
+  }>;
+  lowImpactMissing: Array<{
+    name: string;
+    avgRating: number;
+    matchesRated: number;
+  }>;
+  totalRatingLoss: number;
+  impactLevel: 'Critical' | 'Significant' | 'Moderate' | 'Minimal' | 'Unknown';
+}
+
+function analyzeInjuredPlayersRatings(
+  injuries: KickerGPTInjuryPlayerFlag[],
+  recentMatches: KickerGPTMatchSummary[],
+  teamId: number,
+): InjuredPlayerImpact {
+  const highImpact: InjuredPlayerImpact['highImpactMissing'] = [];
+  const moderateImpact: InjuredPlayerImpact['moderateImpactMissing'] = [];
+  const lowImpact: InjuredPlayerImpact['lowImpactMissing'] = [];
+
+  for (const injury of injuries) {
+    const playerName = injury.name?.toLowerCase() ?? '';
+    const playerRatings: number[] = [];
+
+    // Find this player's ratings across recent matches
+    for (const match of recentMatches) {
+      const teamRatings =
+        match.teams.home.id === teamId
+          ? match.ratings?.home
+          : match.ratings?.away;
+
+      if (teamRatings?.players) {
+        const playerRating = teamRatings.players.find(
+          (p) =>
+            p.playerName.toLowerCase().includes(playerName) ||
+            playerName.includes(p.playerName.toLowerCase()),
+        );
+        if (playerRating?.rating) {
+          playerRatings.push(playerRating.rating);
+        }
+      }
+    }
+
+    if (playerRatings.length > 0) {
+      const avgRating =
+        playerRatings.reduce((a, b) => a + b, 0) / playerRatings.length;
+      const playerData = {
+        name: injury.name ?? '',
+        avgRating: parseFloat(avgRating.toFixed(2)),
+        matchesRated: playerRatings.length,
+      };
+
+      if (avgRating >= 7.5) {
+        highImpact.push(playerData);
+      } else if (avgRating >= 6.8) {
+        moderateImpact.push(playerData);
+      } else {
+        lowImpact.push(playerData);
+      }
+    }
+  }
+
+  // Calculate total rating loss
+  const totalRatingLoss =
+    highImpact.reduce((sum, p) => sum + p.avgRating, 0) +
+    moderateImpact.reduce((sum, p) => sum + p.avgRating, 0) +
+    lowImpact.reduce((sum, p) => sum + p.avgRating, 0);
+
+  // Determine impact level
+  let impactLevel: InjuredPlayerImpact['impactLevel'] = 'Unknown';
+  if (
+    highImpact.length >= 2 ||
+    (highImpact.length >= 1 && moderateImpact.length >= 2)
+  ) {
+    impactLevel = 'Critical';
+  } else if (highImpact.length >= 1 || moderateImpact.length >= 3) {
+    impactLevel = 'Significant';
+  } else if (moderateImpact.length >= 1 || lowImpact.length >= 2) {
+    impactLevel = 'Moderate';
+  } else if (lowImpact.length >= 1) {
+    impactLevel = 'Minimal';
+  }
+
+  return {
+    highImpactMissing: highImpact.sort((a, b) => b.avgRating - a.avgRating),
+    moderateImpactMissing: moderateImpact.sort(
+      (a, b) => b.avgRating - a.avgRating,
+    ),
+    lowImpactMissing: lowImpact.sort((a, b) => b.avgRating - a.avgRating),
+    totalRatingLoss: parseFloat(totalRatingLoss.toFixed(2)),
+    impactLevel,
+  };
+}
+
+interface RatingTrajectory {
+  last5AvgRating: number | null;
+  previous5AvgRating: number | null;
+  trajectory: 'Improving' | 'Declining' | 'Stable' | 'Insufficient data';
+  ratingChange: number | null;
+  matchByMatchRatings: Array<{
+    date: string;
+    opponent: string;
+    avgRating: number | null;
+    result: string;
+  }>;
+  bestRatedMatch: { date: string; opponent: string; avgRating: number } | null;
+  worstRatedMatch: { date: string; opponent: string; avgRating: number } | null;
+}
+
+function calculateRatingTrajectory(
+  matches: KickerGPTMatchSummary[],
+  teamId: number,
+): RatingTrajectory {
+  const matchRatings: Array<{
+    date: string;
+    opponent: string;
+    avgRating: number | null;
+    result: string;
+  }> = [];
+
+  for (const match of matches.slice(0, 10)) {
+    const isHome = match.teams.home.id === teamId;
+    const teamRatings = isHome ? match.ratings?.home : match.ratings?.away;
+    const opponent = isHome ? match.teams.away.name : match.teams.home.name;
+    const result = getTeamResult(match, teamId) ?? 'unknown';
+
+    matchRatings.push({
+      date: match.date,
+      opponent,
+      avgRating: teamRatings?.teamAverage ?? null,
+      result,
+    });
+  }
+
+  const last5 = matchRatings.slice(0, 5).filter((m) => m.avgRating !== null);
+  const previous5 = matchRatings
+    .slice(5, 10)
+    .filter((m) => m.avgRating !== null);
+
+  const last5Avg =
+    last5.length > 0
+      ? last5.reduce((sum, m) => sum + m.avgRating!, 0) / last5.length
+      : null;
+  const previous5Avg =
+    previous5.length > 0
+      ? previous5.reduce((sum, m) => sum + m.avgRating!, 0) / previous5.length
+      : null;
+
+  let trajectory: RatingTrajectory['trajectory'] = 'Insufficient data';
+  let ratingChange: number | null = null;
+
+  if (last5Avg !== null && previous5Avg !== null) {
+    ratingChange = parseFloat((last5Avg - previous5Avg).toFixed(2));
+    if (ratingChange > 0.2) trajectory = 'Improving';
+    else if (ratingChange < -0.2) trajectory = 'Declining';
+    else trajectory = 'Stable';
+  } else if (last5Avg !== null) {
+    trajectory = 'Stable'; // Only have recent data
+  }
+
+  // Find best and worst
+  const validRatings = matchRatings.filter((m) => m.avgRating !== null);
+  const best =
+    validRatings.length > 0
+      ? validRatings.reduce((a, b) => (a.avgRating! > b.avgRating! ? a : b))
+      : null;
+  const worst =
+    validRatings.length > 0
+      ? validRatings.reduce((a, b) => (a.avgRating! < b.avgRating! ? a : b))
+      : null;
+
+  return {
+    last5AvgRating: last5Avg ? parseFloat(last5Avg.toFixed(2)) : null,
+    previous5AvgRating: previous5Avg
+      ? parseFloat(previous5Avg.toFixed(2))
+      : null,
+    trajectory,
+    ratingChange,
+    matchByMatchRatings: matchRatings,
+    bestRatedMatch: best
+      ? { date: best.date, opponent: best.opponent, avgRating: best.avgRating! }
+      : null,
+    worstRatedMatch: worst
+      ? {
+          date: worst.date,
+          opponent: worst.opponent,
+          avgRating: worst.avgRating!,
+        }
+      : null,
+  };
+}
+
+function getRatingQualityComparison(
+  homeTrajectory: RatingTrajectory,
+  awayTrajectory: RatingTrajectory,
+  teams: { home: { name: string }; away: { name: string } },
+): string {
+  const homeRating = homeTrajectory.last5AvgRating;
+  const awayRating = awayTrajectory.last5AvgRating;
+
+  if (homeRating === null && awayRating === null) {
+    return 'Insufficient rating data for comparison';
+  }
+
+  if (homeRating !== null && awayRating !== null) {
+    const diff = homeRating - awayRating;
+    if (Math.abs(diff) < 0.15) {
+      return `Even quality - both teams averaging ~${homeRating.toFixed(1)} ratings`;
+    }
+    if (diff > 0.3) {
+      return `${teams.home.name} showing higher quality (${homeRating.toFixed(2)} vs ${awayRating.toFixed(2)}) - significant edge`;
+    }
+    if (diff < -0.3) {
+      return `${teams.away.name} showing higher quality (${awayRating.toFixed(2)} vs ${homeRating.toFixed(2)}) - significant edge`;
+    }
+    if (diff > 0) {
+      return `${teams.home.name} slightly higher quality (${homeRating.toFixed(2)} vs ${awayRating.toFixed(2)})`;
+    }
+    return `${teams.away.name} slightly higher quality (${awayRating.toFixed(2)} vs ${homeRating.toFixed(2)})`;
+  }
+
+  return 'Partial rating data available';
+}
+
+function analyzeH2HRatings(
+  h2h: KickerGPTMatchSummary[],
+  homeTeamId: number,
+  awayTeamId: number,
+): {
+  matchesWithRatings: number;
+  homeAvgRating: number | null;
+  awayAvgRating: number | null;
+  homeBest: { date: string; rating: number } | null;
+  homeWorst: { date: string; rating: number } | null;
+  awayBest: { date: string; rating: number } | null;
+  awayWorst: { date: string; rating: number } | null;
+  qualityWinner: string;
+  insight: string;
+} {
+  const homeRatings: Array<{ date: string; rating: number }> = [];
+  const awayRatings: Array<{ date: string; rating: number }> = [];
+
+  for (const match of h2h) {
+    // Determine which team is which in this particular match
+    const homeTeamIsHome = match.teams.home.id === homeTeamId;
+    const homeTeamIsAway = match.teams.away.id === homeTeamId;
+    const awayTeamIsHome = match.teams.home.id === awayTeamId;
+    const awayTeamIsAway = match.teams.away.id === awayTeamId;
+
+    // Get ratings for the "home team" (team playing at home in the parent fixture)
+    if (homeTeamIsHome && match.ratings?.home?.teamAverage) {
+      homeRatings.push({
+        date: match.date,
+        rating: match.ratings.home.teamAverage,
+      });
+    } else if (homeTeamIsAway && match.ratings?.away?.teamAverage) {
+      homeRatings.push({
+        date: match.date,
+        rating: match.ratings.away.teamAverage,
+      });
+    }
+
+    // Get ratings for the "away team" (team playing away in the parent fixture)
+    if (awayTeamIsHome && match.ratings?.home?.teamAverage) {
+      awayRatings.push({
+        date: match.date,
+        rating: match.ratings.home.teamAverage,
+      });
+    } else if (awayTeamIsAway && match.ratings?.away?.teamAverage) {
+      awayRatings.push({
+        date: match.date,
+        rating: match.ratings.away.teamAverage,
+      });
+    }
+  }
+
+  const matchesWithRatings = Math.max(homeRatings.length, awayRatings.length);
+
+  const homeAvg =
+    homeRatings.length > 0
+      ? parseFloat(
+          (
+            homeRatings.reduce((s, r) => s + r.rating, 0) / homeRatings.length
+          ).toFixed(2),
+        )
+      : null;
+  const awayAvg =
+    awayRatings.length > 0
+      ? parseFloat(
+          (
+            awayRatings.reduce((s, r) => s + r.rating, 0) / awayRatings.length
+          ).toFixed(2),
+        )
+      : null;
+
+  const homeBest =
+    homeRatings.length > 0
+      ? homeRatings.reduce((a, b) => (a.rating > b.rating ? a : b))
+      : null;
+  const homeWorst =
+    homeRatings.length > 0
+      ? homeRatings.reduce((a, b) => (a.rating < b.rating ? a : b))
+      : null;
+  const awayBest =
+    awayRatings.length > 0
+      ? awayRatings.reduce((a, b) => (a.rating > b.rating ? a : b))
+      : null;
+  const awayWorst =
+    awayRatings.length > 0
+      ? awayRatings.reduce((a, b) => (a.rating < b.rating ? a : b))
+      : null;
+
+  let qualityWinner = 'Even';
+  let insight = '';
+
+  if (homeAvg !== null && awayAvg !== null) {
+    const diff = homeAvg - awayAvg;
+    if (diff > 0.2) {
+      qualityWinner = 'Home team';
+      insight = `Historically performs better in this fixture with ${diff.toFixed(2)} rating advantage`;
+    } else if (diff < -0.2) {
+      qualityWinner = 'Away team';
+      insight = `Historically performs better in this fixture with ${Math.abs(diff).toFixed(2)} rating advantage`;
+    } else {
+      insight =
+        'Both teams typically perform at similar levels in this fixture';
+    }
+  } else {
+    insight = 'Insufficient H2H rating data';
+  }
+
+  return {
+    matchesWithRatings,
+    homeAvgRating: homeAvg,
+    awayAvgRating: awayAvg,
+    homeBest,
+    homeWorst,
+    awayBest,
+    awayWorst,
+    qualityWinner,
+    insight,
+  };
+}
+
+function getTopPerformers(
+  matches: KickerGPTMatchSummary[],
+  teamId: number,
+  limit: number,
+): Array<{ name: string; avgRating: number; appearances: number }> {
+  const playerStats = new Map<string, { totalRating: number; count: number }>();
+
+  for (const match of matches) {
+    const isHome = match.teams.home.id === teamId;
+    const teamRatings = isHome ? match.ratings?.home : match.ratings?.away;
+
+    if (teamRatings?.players) {
+      for (const player of teamRatings.players) {
+        if (player.rating !== null) {
+          const existing = playerStats.get(player.playerName) ?? {
+            totalRating: 0,
+            count: 0,
+          };
+          existing.totalRating += player.rating;
+          existing.count += 1;
+          playerStats.set(player.playerName, existing);
+        }
+      }
+    }
+  }
+
+  const performers = Array.from(playerStats.entries())
+    .filter(([, stats]) => stats.count >= 2) // At least 2 appearances
+    .map(([name, stats]) => ({
+      name,
+      avgRating: parseFloat((stats.totalRating / stats.count).toFixed(2)),
+      appearances: stats.count,
+    }))
+    .sort((a, b) => b.avgRating - a.avgRating)
+    .slice(0, limit);
+
+  return performers;
+}
+
+function getInjuryImpactComparison(
+  homeImpact: InjuredPlayerImpact,
+  awayImpact: InjuredPlayerImpact,
+  teams: { home: { name: string }; away: { name: string } },
+): string {
+  const homeLevel = {
+    Critical: 4,
+    Significant: 3,
+    Moderate: 2,
+    Minimal: 1,
+    Unknown: 0,
+  }[homeImpact.impactLevel];
+  const awayLevel = {
+    Critical: 4,
+    Significant: 3,
+    Moderate: 2,
+    Minimal: 1,
+    Unknown: 0,
+  }[awayImpact.impactLevel];
+
+  if (homeLevel === awayLevel) {
+    return `Even - both teams have ${homeImpact.impactLevel.toLowerCase()} injury impact`;
+  }
+
+  if (homeLevel > awayLevel) {
+    return `${teams.away.name} advantage - ${teams.home.name} missing higher quality players (${homeImpact.highImpactMissing.length} key players out)`;
+  }
+
+  return `${teams.home.name} advantage - ${teams.away.name} missing higher quality players (${awayImpact.highImpactMissing.length} key players out)`;
 }

@@ -30,6 +30,7 @@ export type SportmonksFixture = {
   prematchnews: SportmonksPreMatchNews;
   scores: SportmonksScore[];
   state: SportmonksState;
+  lineups: SportmonksLineup[];
 };
 
 export type SportmonksState = {
@@ -192,6 +193,41 @@ export type SportmonksSidelined = {
     model_type: string | null;
     stat_group: string | null;
   };
+};
+
+export type SportmonksLineupDetail = {
+  id: number;
+  fixture_id: number;
+  player_id: number;
+  team_id: number;
+  lineup_id: number;
+  type_id: number;
+  data: {
+    value: number | string | null;
+  };
+  type: {
+    id: number;
+    name: string;
+    code: string;
+    developer_name: string;
+    model_type: string;
+    stat_group: string;
+  };
+};
+
+export type SportmonksLineup = {
+  id: number;
+  sport_id: number;
+  fixture_id: number;
+  player_id: number;
+  team_id: number;
+  position_id: number;
+  formation_field: string;
+  type_id: number;
+  formation_position: number;
+  player_name: string;
+  jersey_number: number | null;
+  details: SportmonksLineupDetail[];
 };
 
 export type SportmonksSideline = {

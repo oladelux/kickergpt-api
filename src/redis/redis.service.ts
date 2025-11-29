@@ -24,6 +24,13 @@ export class RedisService {
     }
   }
 
+  pipeline() {
+    if (!this.client) {
+      return null;
+    }
+    return this.client.pipeline();
+  }
+
   async get<T>(key: string): Promise<T | null> {
     if (!this.client) {
       return null;
