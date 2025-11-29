@@ -330,6 +330,13 @@ export type KickerGPTFixturesResponse = {
   awayNews: KickerGPTNewsItemSummary[];
 };
 
+export type KickerGPTPlayerRating = {
+  playerId: number;
+  playerName: string;
+  rating: number | null;
+  position?: string;
+};
+
 export type KickerGPTMatchSummary = {
   id: number;
   date: string;
@@ -342,6 +349,16 @@ export type KickerGPTMatchSummary = {
   derby: boolean;
   weatherSummary: string;
   referee: string;
+  ratings?: {
+    home: {
+      players: KickerGPTPlayerRating[];
+      teamAverage: number | null;
+    };
+    away: {
+      players: KickerGPTPlayerRating[];
+      teamAverage: number | null;
+    };
+  };
 };
 
 export type KickerGPTNewsItemSummary = {
