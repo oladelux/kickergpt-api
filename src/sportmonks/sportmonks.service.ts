@@ -357,8 +357,15 @@ export class SportmonksService {
             odds,
           } = apiFixture;
 
-          const homeTeamId = participants[0].id;
-          const awayTeamId = participants[1].id;
+          const homeTeam = participants.find(
+            (p) => p.meta?.location === 'home',
+          );
+          const awayTeam = participants.find(
+            (p) => p.meta?.location === 'away',
+          );
+
+          const homeTeamId = homeTeam?.id ?? participants[0].id;
+          const awayTeamId = awayTeam?.id ?? participants[1].id;
 
           const h2hResults = await this.getHeadToHeadFixtures({
             homeTeamId,
@@ -384,7 +391,7 @@ export class SportmonksService {
           const leagueResponse = this.buildLeagueResponse(league, season);
           const teams = this.buildTeamsResponse(participants);
           const venueResponse = venue ? this.buildVenueResponse(venue) : null;
-          const isDerby = this.isDerbyMatch(participants[0], participants[1]);
+          const isDerby = this.isDerbyMatch(homeTeam, awayTeam);
           const matchOdds = this.buildMatchOdds(odds, apiFixture.id);
           const h2h: KickerGPTMatchSummary[] = await Promise.all(
             (h2hResults ?? []).map(async (result) => ({
@@ -398,10 +405,7 @@ export class SportmonksService {
                 : null,
               status: null,
               goals: this.buildScoresResponse(result.scores),
-              derby: this.isDerbyMatch(
-                result.participants[0],
-                result.participants[1],
-              ),
+              derby: this.isDerbyMatch(homeTeam, awayTeam),
               weatherSummary: await this.resolveWeatherSummary(
                 result.weatherreport,
                 result,
@@ -433,25 +437,27 @@ export class SportmonksService {
               };
             });
 
-          const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
-            homeTeamId,
-            this.formatDateToYMD(season.starting_at),
-            this.getToday(),
-          );
+          const homeTeamRecentMatchesResults =
+            await this.getRecentFixturesByTeam(
+              homeTeamId,
+              this.formatDateToYMD(season.starting_at),
+              this.getToday(),
+            );
 
-          const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
-            awayTeamId,
-            this.formatDateToYMD(season.starting_at),
-            this.getToday(),
-          );
+          const awayTeamRecentMatchesResults =
+            await this.getRecentFixturesByTeam(
+              awayTeamId,
+              this.formatDateToYMD(season.starting_at),
+              this.getToday(),
+            );
 
-          const lastHomeMatches = await this.buildMatchSummaries(
-            lastHomeMatchesResults,
+          const homeTeamRecentMatches = await this.buildMatchSummaries(
+            homeTeamRecentMatchesResults,
             `Fixture ${apiFixture.id} home form`,
           );
 
-          const lastAwayMatches = await this.buildMatchSummaries(
-            lastAwayMatchesResults,
+          const awayTeamRecentMatches = await this.buildMatchSummaries(
+            awayTeamRecentMatchesResults,
             `Fixture ${apiFixture.id} away form`,
           );
 
@@ -478,8 +484,8 @@ export class SportmonksService {
             h2h,
             homeInjuries,
             awayInjuries,
-            lastHomeMatches,
-            lastAwayMatches,
+            homeTeamRecentMatches,
+            awayTeamRecentMatches,
             homeNews: [],
             awayNews: [],
           };
@@ -710,18 +716,23 @@ export class SportmonksService {
   private buildTeamsResponse(
     participants: SportmonksParticipant[],
   ): ApiFootballTeams {
+    const homeTeam = participants.find((p) => p.meta?.location === 'home');
+    const awayTeam = participants.find((p) => p.meta?.location === 'away');
+
+    const home = homeTeam ?? participants[0];
+    const away = awayTeam ?? participants[1];
     return {
       home: {
-        id: participants[0].id,
-        name: participants[0].name,
-        logo: participants[0].image_path,
-        winner: participants[0].meta.winner,
+        id: home.id,
+        name: home.name,
+        logo: home.image_path,
+        winner: home.meta.winner,
       },
       away: {
-        id: participants[1].id,
-        name: participants[1].name,
-        logo: participants[1].image_path,
-        winner: participants[1].meta.winner,
+        id: away.id,
+        name: away.name,
+        logo: away.image_path,
+        winner: away.meta.winner,
       },
     };
   }
@@ -1031,10 +1042,10 @@ export class SportmonksService {
   }
 
   private isDerbyMatch(
-    homeTeam: SportmonksParticipant,
-    awayTeam: SportmonksParticipant,
+    homeTeam: SportmonksParticipant | undefined,
+    awayTeam: SportmonksParticipant | undefined,
   ): boolean {
-    if (!homeTeam.venue || !awayTeam.venue) {
+    if (!homeTeam || !awayTeam || !homeTeam.venue || !awayTeam.venue) {
       return false;
     }
 
@@ -1126,6 +1137,9 @@ export class SportmonksService {
           scores,
         } = result;
 
+        const homeTeam = participants.find((p) => p.meta?.location === 'home');
+        const awayTeam = participants.find((p) => p.meta?.location === 'away');
+
         const weatherSummary = await this.resolveWeatherSummary(
           weatherreport,
           result,
@@ -1141,7 +1155,7 @@ export class SportmonksService {
           venue: venue ? this.buildVenueResponse(venue) : null,
           status: null,
           goals: this.buildScoresResponse(scores),
-          derby: this.isDerbyMatch(participants[0], participants[1]),
+          derby: this.isDerbyMatch(homeTeam, awayTeam),
           weatherSummary,
           referee:
             referees.length > 0

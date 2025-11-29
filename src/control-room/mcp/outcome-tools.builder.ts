@@ -36,8 +36,8 @@ export function buildOutcomeAnalysisTools(
 
   const matches = [
     ...(context.h2h ?? []),
-    ...(context.lastHomeMatches ?? []),
-    ...(context.lastAwayMatches ?? []),
+    ...(context.homeTeamRecentMatches ?? []),
+    ...(context.awayTeamRecentMatches ?? []),
   ];
 
   //TODO: I need to exclude the unique matches from the allMatches array to avoid duplicates
@@ -250,8 +250,8 @@ export function buildOutcomeAnalysisTools(
     description:
       'Analyze if teams were improving, stable, or declining coming into this match',
     handler: () => {
-      const homeMatches = context.lastHomeMatches ?? [];
-      const awayMatches = context.lastAwayMatches ?? [];
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
 
       const homeForm = calculateFormTrajectory(homeMatches, homeTeamId);
       const awayForm = calculateFormTrajectory(awayMatches, awayTeamId);
@@ -397,8 +397,8 @@ export function buildOutcomeAnalysisTools(
     description:
       'Analyze current streaks, unbeaten runs, and confidence levels',
     handler: () => {
-      const homeMatches = context.lastHomeMatches ?? [];
-      const awayMatches = context.lastAwayMatches ?? [];
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
 
       const homeMomentum = analyzeMomentum(homeMatches, homeTeamId);
       const awayMomentum = analyzeMomentum(awayMatches, awayTeamId);
@@ -432,16 +432,16 @@ export function buildOutcomeAnalysisTools(
     description:
       'Analyze venue advantage and how teams perform at home vs away',
     handler: () => {
-      const homeTeamHomeGames = (context.lastHomeMatches ?? []).filter(
+      const homeTeamHomeGames = (context.homeTeamRecentMatches ?? []).filter(
         (m) => m.teams.home.id === homeTeamId,
       );
-      const homeTeamAwayGames = (context.lastHomeMatches ?? []).filter(
+      const homeTeamAwayGames = (context.homeTeamRecentMatches ?? []).filter(
         (m) => m.teams.away.id === homeTeamId,
       );
-      const awayTeamAwayGames = (context.lastAwayMatches ?? []).filter(
+      const awayTeamAwayGames = (context.awayTeamRecentMatches ?? []).filter(
         (m) => m.teams.away.id === awayTeamId,
       );
-      const awayTeamHomeGames = (context.lastAwayMatches ?? []).filter(
+      const awayTeamHomeGames = (context.awayTeamRecentMatches ?? []).filter(
         (m) => m.teams.home.id === awayTeamId,
       );
 
@@ -560,8 +560,8 @@ export function buildOutcomeAnalysisTools(
     description:
       'Check rest days since last match and recent schedule congestion',
     handler: () => {
-      const homeMatches = context.lastHomeMatches ?? [];
-      const awayMatches = context.lastAwayMatches ?? [];
+      const homeMatches = context.homeTeamRecentMatches ?? [];
+      const awayMatches = context.awayTeamRecentMatches ?? [];
 
       const homeRestDays = calculateRestDays(homeMatches, context.date);
       const awayRestDays = calculateRestDays(awayMatches, context.date);
@@ -777,12 +777,12 @@ export function buildOutcomeAnalysisTools(
 
       const upsetTeamMatches =
         winner === 'home'
-          ? (context.lastHomeMatches ?? [])
-          : (context.lastAwayMatches ?? []);
+          ? (context.homeTeamRecentMatches ?? [])
+          : (context.awayTeamRecentMatches ?? []);
       const favoriteMatches =
         winner === 'home'
-          ? (context.lastAwayMatches ?? [])
-          : (context.lastHomeMatches ?? []);
+          ? (context.awayTeamRecentMatches ?? [])
+          : (context.homeTeamRecentMatches ?? []);
 
       // Gather potential upset factors
       const factors: { factor: string; evidence: string }[] = [];

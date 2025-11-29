@@ -571,15 +571,11 @@ export class FixturesService {
               };
             });
 
-          const lastHomeMatchesResults = await this.getRecentFixturesByTeam(
-            teams.home.id,
-            league.id,
-          );
+          const homeTeamRecentMatchesResults =
+            await this.getRecentFixturesByTeam(teams.home.id, league.id);
 
-          const lastAwayMatchesResults = await this.getRecentFixturesByTeam(
-            teams.away.id,
-            league.id,
-          );
+          const awayTeamRecentMatchesResults =
+            await this.getRecentFixturesByTeam(teams.away.id, league.id);
 
           const [homeTeamDetails, awayTeamDetails] = await Promise.all([
             this.getTeamDetails(teams.home.id),
@@ -592,12 +588,12 @@ export class FixturesService {
             (await this.getWeatherSummaryForFixture(fixture)) ??
             'Conditions unavailable';
 
-          const lastHomeMatches = await this.buildMatchSummaries(
-            lastHomeMatchesResults,
+          const homeTeamRecentMatches = await this.buildMatchSummaries(
+            homeTeamRecentMatchesResults,
           );
 
-          const lastAwayMatches = await this.buildMatchSummaries(
-            lastAwayMatchesResults,
+          const awayTeamRecentMatches = await this.buildMatchSummaries(
+            awayTeamRecentMatchesResults,
           );
 
           const oddsResult = await this.getFixtureOdds({
@@ -633,8 +629,8 @@ export class FixturesService {
             h2h,
             homeInjuries,
             awayInjuries,
-            lastHomeMatches,
-            lastAwayMatches,
+            homeTeamRecentMatches,
+            awayTeamRecentMatches,
             homeNews: [],
             awayNews: [],
           };
