@@ -324,8 +324,8 @@ export type KickerGPTFixturesResponse = {
   h2h: KickerGPTMatchSummary[];
   homeInjuries: KickerGPTInjuryPlayerFlag[];
   awayInjuries: KickerGPTInjuryPlayerFlag[];
-  lastHomeMatches: KickerGPTMatchSummary[];
-  lastAwayMatches: KickerGPTMatchSummary[];
+  homeTeamRecentMatches: KickerGPTMatchSummary[];
+  awayTeamRecentMatches: KickerGPTMatchSummary[];
   homeNews: KickerGPTNewsItemSummary[];
   awayNews: KickerGPTNewsItemSummary[];
 };
