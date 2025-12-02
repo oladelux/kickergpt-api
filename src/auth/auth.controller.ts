@@ -18,6 +18,7 @@ import { AuthForgotPasswordDto } from './dto/auth-forgot-password.dto';
 import { AuthConfirmEmailDto } from './dto/auth-confirm-email.dto';
 import { AuthResetPasswordDto } from './dto/auth-reset-password.dto';
 import { AuthUpdateDto } from './dto/auth-update.dto';
+import { ResendEmailVerificationDto } from './dto/resend-email-verification.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthRegisterLoginDto } from './dto/auth-register-login.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -57,6 +58,14 @@ export class AuthController {
     @Body() confirmEmailDto: AuthConfirmEmailDto,
   ): Promise<void> {
     return this.service.confirmEmail(confirmEmailDto.hash);
+  }
+
+  @Post('email/resend')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async resendEmailVerification(
+    @Body() dto: ResendEmailVerificationDto,
+  ): Promise<void> {
+    return this.service.resendEmailVerification(dto.email);
   }
 
   @Post('email/confirm/new')

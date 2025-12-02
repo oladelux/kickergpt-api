@@ -21,6 +21,18 @@ export class AdminMetricsDto {
   @ApiProperty({ example: 1234 })
   userCount: number;
 
+  @ApiProperty({
+    example: 1100,
+    description: 'Number of verified users (active status)',
+  })
+  verifiedUserCount: number;
+
+  @ApiProperty({
+    example: 134,
+    description: 'Number of unverified users (inactive status)',
+  })
+  unverifiedUserCount: number;
+
   @ApiProperty({ example: 120 })
   newUsers7d: number;
 
@@ -76,7 +88,8 @@ export class AdminMetricsDto {
   topChatUsersToday: TopChatUserDto[];
 
   @ApiProperty({
-    description: 'Top users by fixture chat count for current calendar month (UTC)',
+    description:
+      'Top users by fixture chat count for current calendar month (UTC)',
     type: [TopChatUserDto],
   })
   topChatUsersMonth: TopChatUserDto[];

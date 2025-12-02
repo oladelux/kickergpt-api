@@ -85,6 +85,14 @@ export class AuthService {
       });
     }
 
+    if (user.status?.name === StatusEnum.inactive) {
+      await this.sendEmailVerification(user);
+      throw new UnauthorizedException({
+        status: HttpStatus.UNAUTHORIZED,
+        error: 'emailNotVerified',
+      });
+    }
+
     const hash = crypto
       .createHash('sha256')
       .update(randomStringGenerator())
@@ -181,6 +189,14 @@ export class AuthService {
 
     if (user && createdNewUser) {
       await this.subscriptionsService.ensureStripeCustomerForUser(user);
+    }
+
+    if (user?.status?.name === StatusEnum.inactive) {
+      await this.sendEmailVerification(user);
+      throw new UnauthorizedException({
+        status: HttpStatus.UNAUTHORIZED,
+        error: 'emailNotVerified',
+      });
     }
 
     const hash = crypto
@@ -326,6 +342,17 @@ export class AuthService {
         name: StatusEnum.active,
       },
     });
+  }
+
+  async resendEmailVerification(email: string): Promise<void> {
+    const user = await this.usersService.findByEmail(email);
+
+    if (!user || user.status?.name !== StatusEnum.inactive) {
+      // Avoid leaking whether the email exists or is already verified
+      return;
+    }
+
+    await this.sendEmailVerification(user);
   }
 
   async forgotPassword(email: string): Promise<void> {
@@ -558,6 +585,29 @@ export class AuthService {
 
   async logout(data: Pick<JwtRefreshPayloadType, 'sessionId'>) {
     return this.sessionService.deleteById(data.sessionId);
+  }
+
+  private async sendEmailVerification(user: User): Promise<void> {
+    const hash = await this.jwtService.signAsync(
+      {
+        confirmEmailUserId: user.id,
+      },
+      {
+        secret: this.configService.getOrThrow('auth.confirmEmailSecret', {
+          infer: true,
+        }),
+        expiresIn: this.configService.getOrThrow('auth.confirmEmailExpires', {
+          infer: true,
+        }),
+      },
+    );
+
+    await this.mailService.userSignUp({
+      to: user.email as string,
+      data: {
+        hash,
+      },
+    });
   }
 
   private async getTokensData(data: {
