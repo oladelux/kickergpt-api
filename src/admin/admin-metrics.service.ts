@@ -7,7 +7,7 @@ import { PromptUsageEntity } from '../prompt-usage/infrastructure/persistence/re
 import { SubscriptionEntity } from '../subscriptions/infrastructure/persistence/relational/entities/subscription.entity';
 import { SubscriptionPlan } from '../subscriptions/domain/subscription-plan.enum';
 import { SubscriptionStatus } from '../subscriptions/domain/subscription-status.enum';
-import { AdminMetricsDto } from './dto/admin-metrics.dto';
+import { AdminMetricsDto, TopChatUserDto } from './dto/admin-metrics.dto';
 
 @Injectable()
 export class AdminMetricsService {
@@ -62,6 +62,13 @@ export class AdminMetricsService {
       userCount > 0 ? totalPromptsUsed / userCount : 0;
 
     const exhaustedPromptUserCount = await this.countExhaustedUsers();
+    const { todayStart, todayEnd, monthStart, monthEnd } =
+      this.buildDayAndMonthWindows();
+
+    const [topChatUsersToday, topChatUsersMonth] = await Promise.all([
+      this.topChatUsersBetween(todayStart, todayEnd),
+      this.topChatUsersBetween(monthStart, monthEnd),
+    ]);
 
     return {
       userCount,
@@ -81,6 +88,8 @@ export class AdminMetricsService {
       avgPromptUsagePerUser,
       paidUserCount,
       exhaustedPromptUserCount,
+      topChatUsersToday,
+      topChatUsersMonth,
     };
   }
 
@@ -120,6 +129,39 @@ export class AdminMetricsService {
     }
 
     return exhausted;
+  }
+
+  private buildDayAndMonthWindows(): {
+    todayStart: Date;
+    todayEnd: Date;
+    monthStart: Date;
+    monthEnd: Date;
+  } {
+    const now = new Date();
+
+    const todayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0),
+    );
+    const todayEnd = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999),
+    );
+
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+    );
+    const monthEnd = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999,
+      ),
+    );
+
+    return { todayStart, todayEnd, monthStart, monthEnd };
   }
 
   private build7DayWindows(): {
@@ -184,5 +226,44 @@ export class AdminMetricsService {
       return current > 0 ? 100 : 0;
     }
     return ((current - previous) / previous) * 100;
+  }
+
+  private async topChatUsersBetween(
+    start: Date,
+    end: Date,
+    limit = 10,
+  ): Promise<TopChatUserDto[]> {
+    const raw = await this.fixtureChatRepository
+      .createQueryBuilder('chat')
+      .select('chat.userId', 'userId')
+      .addSelect('COUNT(chat.id)', 'chatCount')
+      .where('chat.createdAt BETWEEN :start AND :end', { start, end })
+      .groupBy('chat.userId')
+      .orderBy('COUNT(chat.id)', 'DESC')
+      .limit(limit)
+      .getRawMany<{ userId: string; chatCount: string }>();
+
+    if (!raw.length) {
+      return [];
+    }
+
+    const users = await this.userRepository.find({
+      select: ['id', 'email', 'firstName', 'lastName'],
+      where: { id: In(raw.map((r) => r.userId)) },
+    });
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    return raw
+      .map<TopChatUserDto>((row) => {
+        const user = userById.get(row.userId);
+        return {
+          userId: row.userId,
+          email: user?.email ?? null,
+          firstName: user?.firstName ?? null,
+          lastName: user?.lastName ?? null,
+          chatCount: Number(row.chatCount ?? 0),
+        };
+      })
+      .filter((entry) => entry.chatCount > 0);
   }
 }
