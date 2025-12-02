@@ -27,6 +27,8 @@ export class AdminMetricsService {
 
     const [
       userCount,
+      verifiedUserCount,
+      unverifiedUserCount,
       fixtureChatCount,
       paidUserCount,
       promptUsageAgg,
@@ -38,6 +40,12 @@ export class AdminMetricsService {
       activeUsersPrev7d,
     ] = await Promise.all([
       this.userRepository.count(),
+      this.userRepository.count({
+        where: { status: { name: 'active' } }, // active = verified
+      }),
+      this.userRepository.count({
+        where: { status: { name: 'inactive' } }, // inactive = unverified
+      }),
       this.fixtureChatRepository.count(),
       this.subscriptionRepository.count({
         where: {
@@ -72,6 +80,8 @@ export class AdminMetricsService {
 
     return {
       userCount,
+      verifiedUserCount,
+      unverifiedUserCount,
       newUsers7d,
       newUsersPrev7d,
       newUsers7dChangePct: this.changePct(newUsers7d, newUsersPrev7d),
