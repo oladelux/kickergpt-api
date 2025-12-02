@@ -18,7 +18,7 @@ export class BulkUserEmailScheduler {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('38 10 * * *')
+  @Cron('44 09 * * *')
   async sendBulkUserEmail(): Promise<void> {
     this.logger.log('Starting bulk user email job...');
 
