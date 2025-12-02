@@ -1,5 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class TopChatUserDto {
+  @ApiProperty({ example: 'uuid-user' })
+  userId: string;
+
+  @ApiProperty({ example: 'user@example.com', nullable: true })
+  email: string | null;
+
+  @ApiProperty({ example: 'Ada', nullable: true })
+  firstName: string | null;
+
+  @ApiProperty({ example: 'Lovelace', nullable: true })
+  lastName: string | null;
+
+  @ApiProperty({ example: 42 })
+  chatCount: number;
+}
+
 export class AdminMetricsDto {
   @ApiProperty({ example: 1234 })
   userCount: number;
@@ -51,4 +68,16 @@ export class AdminMetricsDto {
 
   @ApiProperty({ example: 42 })
   exhaustedPromptUserCount: number;
+
+  @ApiProperty({
+    description: 'Top users by fixture chat count for today (UTC)',
+    type: [TopChatUserDto],
+  })
+  topChatUsersToday: TopChatUserDto[];
+
+  @ApiProperty({
+    description: 'Top users by fixture chat count for current calendar month (UTC)',
+    type: [TopChatUserDto],
+  })
+  topChatUsersMonth: TopChatUserDto[];
 }
