@@ -258,6 +258,67 @@ export class MailService {
     });
   }
 
+  async sendUpgradeQuestionEmail(params: {
+    to: string;
+    name?: string;
+    senderName?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const senderName = params.senderName?.trim() || 'KickerGPT';
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.backendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'upgrade-question.hbs',
+    );
+
+    const textBody = [
+      'Hey,',
+      '',
+      'I noticed you signed up for KickerGPT but haven’t upgraded to Pro.',
+      '',
+      "I'm trying to make the product better, and I'd love to understand:",
+      '1. What did you hope KickerGPT would do for you?',
+      '2. What stopped you from upgrading?',
+      '3. What would make it worth paying for?',
+      '',
+      'Just hit reply — I read every response.',
+      '',
+      `Thanks,\n${senderName}`,
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: 'Quick question about KickerGPT',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        senderName,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
