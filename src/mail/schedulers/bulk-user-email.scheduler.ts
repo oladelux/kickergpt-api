@@ -20,8 +20,10 @@ export class BulkUserEmailScheduler {
 
   @Cron('44 09 * * *')
   async sendBulkUserEmail(): Promise<void> {
-    this.logger.log('Starting bulk user email job...');
+    this.logger.log('Bulk user email cron is disabled.');
+    return;
 
+    this.logger.log('Starting bulk user email job...');
     let offset = 0;
     let totalSent = 0;
     let totalFailed = 0;

@@ -150,25 +150,33 @@ export class AdminMetricsService {
     const now = new Date();
 
     const todayStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0),
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        0,
+        0,
+        0,
+        0,
+      ),
     );
     const todayEnd = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999),
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        23,
+        59,
+        59,
+        999,
+      ),
     );
 
     const monthStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
     );
     const monthEnd = new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999,
-      ),
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999),
     );
 
     return { todayStart, todayEnd, monthStart, monthEnd };
