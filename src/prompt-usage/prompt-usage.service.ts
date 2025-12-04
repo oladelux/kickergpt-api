@@ -7,7 +7,7 @@ import { SubscriptionStatus } from '../subscriptions/domain/subscription-status.
 @Injectable()
 export class PromptUsageService {
   private readonly logger = new Logger(PromptUsageService.name);
-  private static readonly FREE_MONTHLY_CREDITS = 5;
+  private static readonly FREE_MONTHLY_CREDITS = 10;
   private static readonly PRO_MONTHLY_CREDITS = 100;
 
   constructor(private readonly repository: PromptUsageRepository) {}
