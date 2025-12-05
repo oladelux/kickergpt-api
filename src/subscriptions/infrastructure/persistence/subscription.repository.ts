@@ -28,6 +28,14 @@ export abstract class SubscriptionRepository {
     stripeSubscriptionId: Subscription['stripeSubscriptionId'],
   ): Promise<NullableType<Subscription>>;
 
+  abstract findByPaystackCustomerCode(
+    paystackCustomerCode: Subscription['paystackCustomerCode'],
+  ): Promise<NullableType<Subscription>>;
+
+  abstract findByPaystackSubscriptionCode(
+    paystackSubscriptionCode: Subscription['paystackSubscriptionCode'],
+  ): Promise<NullableType<Subscription>>;
+
   abstract updatePlanAndStatus(
     id: Subscription['id'],
     data: {

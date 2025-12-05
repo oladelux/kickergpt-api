@@ -72,6 +72,21 @@ export class SubscriptionRelationalRepository
     return this.findBy({ stripeSubscriptionId });
   }
 
+  findByPaystackCustomerCode(
+    paystackCustomerCode: string,
+  ): Promise<NullableType<Subscription>> {
+    return this.findBy({ paystackCustomerCode });
+  }
+
+  findByPaystackSubscriptionCode(
+    paystackSubscriptionCode: string,
+  ): Promise<NullableType<Subscription>> {
+    if (!paystackSubscriptionCode) {
+      return Promise.resolve(null);
+    }
+    return this.findBy({ paystackSubscriptionCode });
+  }
+
   async updatePlanAndStatus(
     id: Subscription['id'],
     data: {
