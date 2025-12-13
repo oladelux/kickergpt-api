@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Post,
   Request,
   UseGuards,
@@ -16,6 +17,7 @@ import { SelectPlanDto } from './dto/select-plan.dto';
 import { SubscriptionsService } from './subscriptions.service';
 import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { PromptUsageSummaryDto } from '../prompt-usage/dto/prompt-usage-summary.dto';
+import { UsersService } from '../users/users.service';
 
 @ApiTags('Subscriptions')
 @ApiBearerAuth()
@@ -28,6 +30,7 @@ export class SubscriptionsController {
   constructor(
     private readonly subscriptionsService: SubscriptionsService,
     private readonly promptUsageService: PromptUsageService,
+    private readonly usersService: UsersService,
   ) {}
 
   @Get('me')
@@ -64,5 +67,21 @@ export class SubscriptionsController {
       plan: subscription.plan,
       status: subscription.status,
     });
+  }
+
+  @Post('verify')
+  @ApiOkResponse({
+    type: Subscription,
+  })
+  async verify(
+    @Request() request,
+    @Body() data: { reference: string },
+  ): Promise<Subscription> {
+    const userId = request.user.id;
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.subscriptionsService.verifyPayment(data.reference, user);
   }
 }

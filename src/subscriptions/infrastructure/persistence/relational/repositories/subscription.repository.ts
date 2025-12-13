@@ -8,6 +8,7 @@ import { SubscriptionStatus } from '../../../../domain/subscription-status.enum'
 import { SubscriptionRepository } from '../../subscription.repository';
 import { SubscriptionEntity } from '../entities/subscription.entity';
 import { SubscriptionMapper } from '../mappers/subscription.mapper';
+import { PaymentProvider } from '../../../../domain/payment-provider.enum';
 
 @Injectable()
 export class SubscriptionRelationalRepository
@@ -93,6 +94,10 @@ export class SubscriptionRelationalRepository
       plan: SubscriptionPlan;
       status: SubscriptionStatus;
       stripeSubscriptionId: Subscription['stripeSubscriptionId'];
+      paystackSubscriptionCode: Subscription['paystackSubscriptionCode'];
+      paystackCustomerCode: Subscription['paystackCustomerCode'];
+      stripeCustomerId: Subscription['stripeCustomerId'];
+      paymentProvider: PaymentProvider;
       currentPeriodEnd: Subscription['currentPeriodEnd'];
     },
   ): Promise<Subscription> {

@@ -106,6 +106,7 @@ export class UsersService {
       status: status,
       provider: createUserDto.provider ?? AuthProvidersEnum.email,
       socialId: createUserDto.socialId,
+      countryCode: createUserDto.countryCode ?? null,
     });
   }
 
@@ -217,6 +218,7 @@ export class UsersService {
       firstName: updateUserDto.firstName,
       lastName: updateUserDto.lastName,
       email,
+      countryCode: updateUserDto.countryCode ?? null,
       password,
       photo,
       role,

@@ -1,7 +1,13 @@
 # Paystack Integration Implementation Summary
 
 ## Overview
-Successfully implemented Paystack as a dual payment provider alongside Stripe. The system now routes users from Nigeria, Ghana, South Africa, and Kenya to Paystack, while keeping existing Stripe users unchanged.
+Successfully implemented Paystack as a dual payment provider alongside Stripe using the official [paystack-sdk](https://www.npmjs.com/package/paystack-sdk). The system now routes users from Nigeria to Paystack, while all other countries use Stripe.
+
+## Recent Updates (December 2025)
+- ✅ **Migrated to Official SDK**: Replaced custom HTTP client with official `paystack-sdk` package
+- ✅ **Nigeria-Only Routing**: Simplified payment provider routing to only use Paystack for Nigerian users (NG)
+- ✅ **Configuration Cleanup**: Removed multi-currency plan codes (GHS, ZAR, KES), keeping only NGN
+- ✅ **Code Simplification**: Streamlined configuration and routing logic
 
 ## What Was Implemented
 
@@ -17,11 +23,12 @@ Successfully implemented Paystack as a dual payment provider alongside Stripe. T
 
 ### 2. Paystack Module ✅
 - **Configuration**:
-  - `src/paystack/config/paystack-config.type.ts` - Type definitions
+  - `src/paystack/config/paystack-config.type.ts` - Type definitions (NGN only)
   - `src/paystack/config/paystack.config.ts` - Configuration registration
   - Integrated into main config at `src/config/config.type.ts`
   
 - **Paystack Client Service** (`src/paystack/paystack-client.service.ts`):
+  - **Uses Official SDK**: Built on top of `paystack-sdk` npm package
   - `createCustomer()` - Create Paystack customer
   - `initializeTransaction()` - Initialize subscription payment
   - `verifyTransaction()` - Verify payment
@@ -36,8 +43,8 @@ Successfully implemented Paystack as a dual payment provider alongside Stripe. T
 Updated `src/subscriptions/subscriptions.service.ts` with:
 
 - **Payment Provider Routing**:
-  - `determinePaymentProvider(countryCode)` - Routes NG/GH/ZA/KE to Paystack, others to Stripe
-  - `getPaystackPlanCodeByCountry(countryCode)` - Returns appropriate Paystack plan code
+  - `determinePaymentProvider(countryCode)` - Routes only NG (Nigeria) to Paystack, all others to Stripe
+  - `getPaystackPlanCodeByCountry()` - Returns NGN plan code (simplified, no country parameter needed)
 
 - **Customer Management**:
   - `ensureStripeCustomerForUser()` - Creates Stripe customers (updated)
@@ -97,19 +104,18 @@ PAYSTACK_SECRET_KEY=sk_live_your_paystack_secret_key_here
 PAYSTACK_PUBLIC_KEY=pk_live_your_paystack_public_key_here
 PAYSTACK_WEBHOOK_SECRET=your_paystack_webhook_secret_here
 PAYSTACK_PRO_NGN_PLAN_CODE=PLN_ngn_plan_code_here
-PAYSTACK_PRO_GHS_PLAN_CODE=PLN_ghs_plan_code_here
-PAYSTACK_PRO_ZAR_PLAN_CODE=PLN_zar_plan_code_here
-PAYSTACK_PRO_KES_PLAN_CODE=PLN_kes_plan_code_here
 PAYSTACK_SUCCESS_URL=https://www.kickergpt.com/fixtures
 PAYSTACK_CANCEL_URL=https://www.kickergpt.com/plans
 ```
+
+**Note**: Only NGN (Nigerian Naira) plan code is required as Paystack is now exclusively for Nigerian users.
 
 ## How It Works
 
 ### For New Users
 1. User selects a plan and provides country code
 2. System determines payment provider based on country:
-   - NG, GH, ZA, KE → Paystack
+   - NG (Nigeria) → Paystack
    - All others → Stripe
 3. Creates customer in appropriate payment provider
 4. Redirects to payment provider's checkout/authorization page
@@ -121,8 +127,8 @@ PAYSTACK_CANCEL_URL=https://www.kickergpt.com/plans
 - Existing Stripe subscriptions continue to work without any changes
 
 ### Country-Based Routing
-- **Paystack Countries**: Nigeria (NG), Ghana (GH), South Africa (ZA), Kenya (KE)
-- **Stripe Countries**: All others (including US, UK, EU, etc.)
+- **Paystack Countries**: Nigeria (NG) only
+- **Stripe Countries**: All others (including GH, ZA, KE, US, UK, EU, etc.)
 
 ### Webhook Endpoints
 - **Stripe**: `POST /v1/stripe/webhook` (existing)
@@ -138,18 +144,14 @@ npm run migration:run
 ### 2. Set Up Paystack Account
 1. Create account at https://paystack.com
 2. Get API keys from Paystack Dashboard
-3. Create subscription plans for each currency:
-   - NGN (Nigerian Naira)
-   - GHS (Ghanaian Cedi)
-   - ZAR (South African Rand)
-   - KES (Kenyan Shilling)
+3. Create subscription plan for Nigerian Naira (NGN)
 
 ### 3. Update Environment Variables
 Copy the Paystack variables from `env-example-relational` to your `.env` file and fill in:
 - Your Paystack secret key
 - Your Paystack public key
 - Your Paystack webhook secret
-- Plan codes for each currency
+- NGN plan code (Nigerian Naira)
 
 ### 4. Configure Webhooks
 In your Paystack dashboard, set up webhook endpoint:
@@ -164,7 +166,7 @@ In your Paystack dashboard, set up webhook endpoint:
 1. Test with Nigerian test card: `5060666666666666666` (CVV: 123, Expiry: any future date)
 2. Verify subscription creation
 3. Verify webhook handling
-4. Test with other supported countries
+4. Test with non-Nigerian countries to ensure they route to Stripe
 
 ### 6. Frontend Updates (If Needed)
 - Update frontend to pass user's country code when selecting plan
@@ -191,16 +193,33 @@ In your Paystack dashboard, set up webhook endpoint:
 ### Testing Checklist
 - [ ] Run database migration successfully
 - [ ] Create Paystack account and get API keys
-- [ ] Set up Paystack subscription plans
+- [ ] Set up Paystack subscription plan (NGN only)
 - [ ] Configure environment variables
 - [ ] Set up Paystack webhooks
 - [ ] Test Nigerian user subscription flow
-- [ ] Test Ghanaian user subscription flow
-- [ ] Test South African user subscription flow
-- [ ] Test Kenyan user subscription flow
+- [ ] Test non-Nigerian users route to Stripe (e.g., GH, ZA, KE, US, UK)
 - [ ] Verify existing Stripe users still work
 - [ ] Test webhook events from Paystack
 - [ ] Test webhook events from Stripe (ensure no regression)
+
+## SDK Information
+
+### Official Paystack SDK
+- **Package**: [paystack-sdk](https://www.npmjs.com/package/paystack-sdk) v3.5.0+
+- **GitHub**: https://github.com/tekpriest/paystack-node
+- **Benefits**:
+  - Type-safe TypeScript implementation
+  - Maintained and updated regularly
+  - Built-in error handling
+  - Comprehensive API coverage
+  - Cleaner, more maintainable code
+
+### Migration from Custom HTTP Client
+The implementation was migrated from a custom HTTP client (using `fetch`) to the official SDK in December 2025. This provides:
+- Better type safety and IDE autocomplete
+- Reduced maintenance burden
+- Automatic updates with SDK releases
+- Community support and bug fixes
 
 ## Support
 
@@ -208,6 +227,7 @@ In your Paystack dashboard, set up webhook endpoint:
 - API Reference: https://paystack.com/docs/api/
 - Subscription API: https://paystack.com/docs/api/subscription/
 - Webhooks: https://paystack.com/docs/api/webhook/
+- SDK Documentation: https://www.npmjs.com/package/paystack-sdk
 
 ### Troubleshooting
 - Check logs for webhook signature verification errors

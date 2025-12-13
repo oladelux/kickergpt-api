@@ -78,18 +78,20 @@ export class SubscriptionsService {
       return subscription;
     }
 
-    const customerResponse = await this.paystackClient.createCustomer({
-      email: user.email ?? '',
-      first_name: user.firstName ?? undefined,
-      last_name: user.lastName ?? undefined,
-      metadata: {
-        user_id: user.id,
-      },
-    });
+    const customerResponse = await this.paystackClient.createCustomer(
+      user.email!,
+      user.firstName!,
+      user.lastName!,
+    );
+
+    const customerCode = customerResponse.data?.customer_code;
+    if (!customerCode) {
+      throw new Error('Customer code not found');
+    }
 
     if (subscription) {
       return this.subscriptionRepository.update(subscription.id, {
-        paystackCustomerCode: customerResponse.data.customer_code,
+        paystackCustomerCode: customerCode,
         paymentProvider: PaymentProvider.PAYSTACK,
       });
     }
@@ -102,7 +104,7 @@ export class SubscriptionsService {
     domain.paymentProvider = PaymentProvider.PAYSTACK;
     domain.stripeCustomerId = null;
     domain.stripeSubscriptionId = null;
-    domain.paystackCustomerCode = customerResponse.data.customer_code;
+    domain.paystackCustomerCode = customerCode;
     domain.paystackSubscriptionCode = null;
     domain.currentPeriodEnd = null;
 
@@ -110,38 +112,22 @@ export class SubscriptionsService {
   }
 
   async getSubscriptionForUser(userId: string): Promise<Subscription> {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
     const subscription = await this.subscriptionRepository.findByUserId(userId);
+    const paymentProvider = this.determinePaymentProvider(user?.countryCode);
 
     if (subscription?.stripeCustomerId || subscription?.paystackCustomerCode) {
       return subscription;
     }
 
-    const user = await this.usersService.findById(userId);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
+    if (paymentProvider === PaymentProvider.PAYSTACK) {
+      return this.ensurePaystackCustomerForUser(user);
+    } else {
+      return this.ensureStripeCustomerForUser(user);
     }
-
-    // For new users without a subscription, we'll create one when they select a plan
-    // For now, return a default subscription
-    if (subscription) {
-      return subscription;
-    }
-
-    // Create a default free subscription without payment provider
-    const domain = new Subscription();
-    domain.user = user;
-    domain.userId = user.id;
-    domain.plan = SubscriptionPlan.FREE;
-    domain.status = SubscriptionStatus.ACTIVE;
-    domain.paymentProvider = PaymentProvider.STRIPE; // Default, will be updated on plan selection
-    domain.stripeCustomerId = null;
-    domain.stripeSubscriptionId = null;
-    domain.paystackCustomerCode = null;
-    domain.paystackSubscriptionCode = null;
-    domain.currentPeriodEnd = null;
-
-    return this.subscriptionRepository.create(domain);
   }
 
   async handlePlanSelection(
@@ -150,12 +136,17 @@ export class SubscriptionsService {
     countryCode?: string,
   ): Promise<string | null> {
     const subscription = await this.getSubscriptionForUser(userId);
+    const paymentProvider = this.determinePaymentProvider(countryCode);
 
     if (plan === SubscriptionPlan.FREE) {
       await this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
         plan: SubscriptionPlan.FREE,
         status: SubscriptionStatus.ACTIVE,
+        paystackCustomerCode: null,
+        stripeCustomerId: null,
+        paymentProvider: paymentProvider,
         stripeSubscriptionId: null,
+        paystackSubscriptionCode: null,
         currentPeriodEnd: null,
       });
       return null;
@@ -169,9 +160,6 @@ export class SubscriptionsService {
     ) {
       throw new BadRequestException('Subscription already active');
     }
-
-    // Determine payment provider based on country
-    const paymentProvider = this.determinePaymentProvider(countryCode);
     const user = await this.usersService.findById(userId);
 
     if (!user) {
@@ -180,7 +168,7 @@ export class SubscriptionsService {
 
     // Route to appropriate payment provider
     if (paymentProvider === PaymentProvider.PAYSTACK) {
-      return this.handlePaystackPlanSelection(user, subscription, countryCode);
+      return this.handlePaystackPlanSelection(user, subscription);
     } else {
       return this.handleStripePlanSelection(user, subscription, countryCode);
     }
@@ -232,30 +220,28 @@ export class SubscriptionsService {
   private async handlePaystackPlanSelection(
     user: User,
     subscription: Subscription,
-    countryCode?: string,
   ): Promise<string> {
     // Ensure Paystack customer exists
     if (!subscription.paystackCustomerCode) {
       subscription = await this.ensurePaystackCustomerForUser(user);
     }
 
-    const planCode = this.getPaystackPlanCodeByCountry(countryCode);
-    const successUrl = this.configService.getOrThrow('paystack.successUrl', {
-      infer: true,
-    });
-
+    const planCode = this.getPaystackPlanCodeByCountry();
     const transactionResponse = await this.paystackClient.initializeTransaction(
       {
         email: user.email ?? '',
-        amount: 0, // Amount is determined by the plan
+        amount: '10000',
         plan: planCode,
-        customer: subscription.paystackCustomerCode!,
-        metadata: {
-          user_id: user.id,
-        },
-        callback_url: successUrl,
       },
     );
+
+    if (!transactionResponse.status) {
+      throw new Error('Transaction initialization failed');
+    }
+
+    if (transactionResponse.data === null) {
+      throw new Error('Transaction data is null');
+    }
 
     if (!transactionResponse.data.authorization_url) {
       throw new InternalServerErrorException(
@@ -298,100 +284,15 @@ export class SubscriptionsService {
         ? SubscriptionStatus.ACTIVE
         : SubscriptionStatus.INACTIVE,
       stripeSubscriptionId: isActive ? stripeSubscription.id : null,
+      paystackSubscriptionCode: null,
+      paystackCustomerCode: null,
+      stripeCustomerId: null,
+      paymentProvider: PaymentProvider.STRIPE,
       currentPeriodEnd:
         isActive && stripeSubscription.current_period_end
           ? new Date(stripeSubscription.current_period_end * 1000)
           : null,
     });
-  }
-
-  async handlePaystackSubscriptionEvent(eventData: any): Promise<void> {
-    const customerCode = eventData.customer?.customer_code;
-    const subscriptionCode = eventData.subscription_code;
-
-    if (!customerCode) {
-      this.logger.warn('Unable to resolve paystack customer code from event');
-      return;
-    }
-
-    const subscription =
-      await this.subscriptionRepository.findByPaystackCustomerCode(
-        customerCode,
-      );
-
-    if (!subscription) {
-      this.logger.warn(
-        `Subscription not found for paystack customer ${customerCode}`,
-      );
-      return;
-    }
-
-    const status = eventData.status;
-    const isActive = status === 'active' || status === 'complete';
-
-    await this.subscriptionRepository.update(subscription.id, {
-      plan: isActive ? SubscriptionPlan.PRO : SubscriptionPlan.FREE,
-      status: isActive
-        ? SubscriptionStatus.ACTIVE
-        : SubscriptionStatus.INACTIVE,
-      paystackSubscriptionCode: isActive ? subscriptionCode : null,
-      currentPeriodEnd:
-        isActive && eventData.next_payment_date
-          ? new Date(eventData.next_payment_date)
-          : null,
-    });
-  }
-
-  async handlePaystackChargeSuccessEvent(eventData: any): Promise<void> {
-    const customerCode = eventData.customer?.customer_code;
-
-    if (!customerCode) {
-      this.logger.warn(
-        'Unable to resolve paystack customer code from charge event',
-      );
-      return;
-    }
-
-    // If this is a subscription charge, the subscription webhook will handle it
-    // This handler is for one-time payments or initial subscription setup
-    const subscription =
-      await this.subscriptionRepository.findByPaystackCustomerCode(
-        customerCode,
-      );
-
-    if (!subscription) {
-      this.logger.warn(
-        `Subscription not found for paystack customer ${customerCode}`,
-      );
-      return;
-    }
-
-    // Check if this charge is for a subscription
-    if (eventData.plan) {
-      // Create subscription after successful payment
-      try {
-        const subscriptionResponse =
-          await this.paystackClient.createSubscription({
-            customer: customerCode,
-            plan: eventData.plan.plan_code,
-            authorization: eventData.authorization?.authorization_code,
-          });
-
-        await this.subscriptionRepository.update(subscription.id, {
-          plan: SubscriptionPlan.PRO,
-          status: SubscriptionStatus.ACTIVE,
-          paystackSubscriptionCode: subscriptionResponse.data.subscription_code,
-          currentPeriodEnd: new Date(
-            subscriptionResponse.data.next_payment_date,
-          ),
-        });
-      } catch (error) {
-        this.logger.error(
-          'Failed to create Paystack subscription after charge',
-          error,
-        );
-      }
-    }
   }
 
   private buildCustomerName(user: User): string | undefined {
@@ -430,15 +331,17 @@ export class SubscriptionsService {
    * Nigeria (NG), Ghana (GH), South Africa (ZA), Kenya (KE) -> Paystack
    * All others -> Stripe
    */
-  private determinePaymentProvider(countryCode?: string): PaymentProvider {
+  private determinePaymentProvider(
+    countryCode?: string | null,
+  ): PaymentProvider {
     if (!countryCode) {
       return PaymentProvider.STRIPE;
     }
 
     const normalizedCountry = countryCode.toUpperCase();
-    const paystackCountries = ['NG', 'GH', 'ZA', 'KE'];
 
-    if (paystackCountries.includes(normalizedCountry)) {
+    // Only Nigeria uses Paystack, all other countries use Stripe
+    if (normalizedCountry === 'NG') {
       return PaymentProvider.PAYSTACK;
     }
 
@@ -448,37 +351,11 @@ export class SubscriptionsService {
   /**
    * Get Paystack plan code based on country.
    */
-  private getPaystackPlanCodeByCountry(countryCode?: string): string {
-    if (!countryCode) {
-      return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
-        infer: true,
-      });
-    }
-
-    const normalizedCountry = countryCode.toUpperCase();
-
-    switch (normalizedCountry) {
-      case 'NG':
-        return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
-          infer: true,
-        });
-      case 'GH':
-        return this.configService.getOrThrow('paystack.proPlanCodeGhs', {
-          infer: true,
-        });
-      case 'ZA':
-        return this.configService.getOrThrow('paystack.proPlanCodeZar', {
-          infer: true,
-        });
-      case 'KE':
-        return this.configService.getOrThrow('paystack.proPlanCodeKes', {
-          infer: true,
-        });
-      default:
-        return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
-          infer: true,
-        });
-    }
+  private getPaystackPlanCodeByCountry(): string {
+    // Paystack is only used for Nigeria, so always return NGN plan code
+    return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
+      infer: true,
+    });
   }
 
   /**
@@ -552,5 +429,55 @@ export class SubscriptionsService {
     return this.configService.getOrThrow('stripe.proPriceIdUsd', {
       infer: true,
     });
+  }
+
+  public async verifyPayment(reference: string, user: User) {
+    const transaction = await this.paystackClient.verifyTransaction(reference);
+    if (!transaction.status) {
+      throw new Error('Transaction verification failed');
+    }
+
+    if (transaction.data === null) {
+      throw new Error('Transaction data is null');
+    }
+    const customerCode = transaction.data.customer.customer_code;
+    const paystackCustomerId = customerCode;
+    const paystackSubscriptionCode = transaction.data.subscription_code;
+
+    const existingSubscription = await this.subscriptionRepository.findByUserId(
+      user.id,
+    );
+
+    if (!existingSubscription) {
+      throw new NotFoundException(`Subscription not found for user ${user.id}`);
+    }
+
+    const isActive = existingSubscription.status === SubscriptionStatus.ACTIVE;
+
+    const updatedSubscription =
+      await this.subscriptionRepository.updatePlanAndStatus(
+        existingSubscription.id,
+        {
+          plan: isActive ? SubscriptionPlan.PRO : SubscriptionPlan.FREE,
+          status: isActive
+            ? SubscriptionStatus.ACTIVE
+            : SubscriptionStatus.INACTIVE,
+          paystackSubscriptionCode: paystackSubscriptionCode ?? null,
+          paystackCustomerCode: paystackCustomerId,
+          stripeCustomerId: null,
+          paymentProvider: PaymentProvider.PAYSTACK,
+          stripeSubscriptionId: null,
+          currentPeriodEnd:
+            isActive && transaction.data.paidAt
+              ? new Date(
+                  new Date(transaction.data.paidAt).setMonth(
+                    new Date(transaction.data.paidAt).getMonth() + 1,
+                  ),
+                )
+              : null,
+        },
+      );
+
+    return updatedSubscription;
   }
 }

@@ -62,7 +62,7 @@ export class AuthController {
 
   @Post('email/resend')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async resendEmailVerification(
+  public resendEmailVerification(
     @Body() dto: ResendEmailVerificationDto,
   ): Promise<void> {
     return this.service.resendEmailVerification(dto.email);
