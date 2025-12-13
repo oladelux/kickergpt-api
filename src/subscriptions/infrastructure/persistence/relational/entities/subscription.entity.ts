@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { SubscriptionPlan } from '../../../../domain/subscription-plan.enum';
 import { SubscriptionStatus } from '../../../../domain/subscription-status.enum';
+import { PaymentProvider } from '../../../../domain/payment-provider.enum';
 import { EntityRelationalHelper } from '../../../../../utils/relational-entity-helper';
 import { UserEntity } from '../../../../../users/infrastructure/persistence/relational/entities/user.entity';
 
@@ -35,13 +36,28 @@ export class SubscriptionEntity extends EntityRelationalHelper {
   })
   status: SubscriptionStatus;
 
+  @Column({
+    type: 'enum',
+    enum: PaymentProvider,
+    default: PaymentProvider.STRIPE,
+  })
+  paymentProvider: PaymentProvider;
+
   @Index('IDX_subscription_stripe_customer')
-  @Column({ type: 'varchar', unique: true })
-  stripeCustomerId: string;
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  stripeCustomerId: string | null;
 
   @Index('IDX_subscription_stripe_subscription')
   @Column({ type: 'varchar', nullable: true, unique: true })
   stripeSubscriptionId: string | null;
+
+  @Index('IDX_subscription_paystack_customer')
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  paystackCustomerCode: string | null;
+
+  @Index('IDX_subscription_paystack_subscription')
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  paystackSubscriptionCode: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   currentPeriodEnd: Date | null;

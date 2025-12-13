@@ -13,4 +13,8 @@ export class AuthEmailLoginDto {
   @ApiProperty()
   @IsNotEmpty()
   password: string;
+
+  @ApiProperty({ example: 'US', type: String })
+  @IsNotEmpty()
+  countryCode: string;
 }
