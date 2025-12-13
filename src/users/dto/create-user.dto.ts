@@ -52,4 +52,8 @@ export class CreateUserDto {
   @IsOptional()
   @Type(() => StatusDto)
   status?: StatusDto;
+
+  @ApiPropertyOptional({ example: 'US', type: String })
+  @IsOptional()
+  countryCode?: string | null;
 }

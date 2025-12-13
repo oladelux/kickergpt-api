@@ -20,4 +20,8 @@ export class AuthRegisterLoginDto {
   @ApiProperty({ example: 'Doe' })
   @IsNotEmpty()
   lastName: string;
+
+  @ApiProperty({ example: 'US', type: String })
+  @IsNotEmpty()
+  countryCode: string;
 }

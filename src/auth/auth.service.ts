@@ -92,6 +92,10 @@ export class AuthService {
         error: 'emailNotVerified',
       });
     }
+    // Update user's country code from login request
+    await this.usersService.update(user.id, {
+      countryCode: loginDto.countryCode,
+    });
 
     const hash = crypto
       .createHash('sha256')
@@ -235,6 +239,7 @@ export class AuthService {
       role: {
         name: RoleEnum.user,
       },
+      countryCode: dto.countryCode,
       status: {
         name: StatusEnum.inactive,
       },

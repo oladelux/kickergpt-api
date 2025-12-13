@@ -8,6 +8,7 @@ import { SubscriptionStatus } from '../../../../domain/subscription-status.enum'
 import { SubscriptionRepository } from '../../subscription.repository';
 import { SubscriptionEntity } from '../entities/subscription.entity';
 import { SubscriptionMapper } from '../mappers/subscription.mapper';
+import { PaymentProvider } from '../../../../domain/payment-provider.enum';
 
 @Injectable()
 export class SubscriptionRelationalRepository
@@ -72,12 +73,31 @@ export class SubscriptionRelationalRepository
     return this.findBy({ stripeSubscriptionId });
   }
 
+  findByPaystackCustomerCode(
+    paystackCustomerCode: string,
+  ): Promise<NullableType<Subscription>> {
+    return this.findBy({ paystackCustomerCode });
+  }
+
+  findByPaystackSubscriptionCode(
+    paystackSubscriptionCode: string,
+  ): Promise<NullableType<Subscription>> {
+    if (!paystackSubscriptionCode) {
+      return Promise.resolve(null);
+    }
+    return this.findBy({ paystackSubscriptionCode });
+  }
+
   async updatePlanAndStatus(
     id: Subscription['id'],
     data: {
       plan: SubscriptionPlan;
       status: SubscriptionStatus;
       stripeSubscriptionId: Subscription['stripeSubscriptionId'];
+      paystackSubscriptionCode: Subscription['paystackSubscriptionCode'];
+      paystackCustomerCode: Subscription['paystackCustomerCode'];
+      stripeCustomerId: Subscription['stripeCustomerId'];
+      paymentProvider: PaymentProvider;
       currentPeriodEnd: Subscription['currentPeriodEnd'];
     },
   ): Promise<Subscription> {

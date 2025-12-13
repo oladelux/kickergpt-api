@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { UsersModule } from '../users/users.module';
 import { StripeModule } from '../stripe/stripe.module';
+import { PaystackModule } from '../paystack/paystack.module';
 import { RelationalSubscriptionPersistenceModule } from './infrastructure/persistence/relational/relational-persistence.module';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
@@ -12,6 +13,7 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
     RelationalSubscriptionPersistenceModule,
     UsersModule,
     StripeModule,
+    PaystackModule,
     PromptUsageModule,
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
