@@ -6,7 +6,6 @@ import { RelationalSubscriptionPersistenceModule } from './infrastructure/persis
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
-import { PaystackWebhookController } from './paystack-webhook.controller';
 import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 
 @Module({
@@ -17,11 +16,7 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
     PaystackModule,
     PromptUsageModule,
   ],
-  controllers: [
-    SubscriptionsController,
-    StripeWebhookController,
-    PaystackWebhookController,
-  ],
+  controllers: [SubscriptionsController, StripeWebhookController],
   providers: [SubscriptionsService],
   exports: [SubscriptionsService],
 })

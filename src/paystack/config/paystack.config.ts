@@ -17,15 +17,6 @@ class EnvironmentVariablesValidator {
   PAYSTACK_PRO_NGN_PLAN_CODE: string;
 
   @IsString()
-  PAYSTACK_PRO_GHS_PLAN_CODE: string;
-
-  @IsString()
-  PAYSTACK_PRO_ZAR_PLAN_CODE: string;
-
-  @IsString()
-  PAYSTACK_PRO_KES_PLAN_CODE: string;
-
-  @IsString()
   PAYSTACK_SUCCESS_URL: string;
 
   @IsString()
@@ -40,9 +31,6 @@ export default registerAs<PaystackConfig>('paystack', () => {
     publicKey: process.env.PAYSTACK_PUBLIC_KEY as string,
     webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET as string,
     proPlanCodeNgn: process.env.PAYSTACK_PRO_NGN_PLAN_CODE as string,
-    proPlanCodeGhs: process.env.PAYSTACK_PRO_GHS_PLAN_CODE as string,
-    proPlanCodeZar: process.env.PAYSTACK_PRO_ZAR_PLAN_CODE as string,
-    proPlanCodeKes: process.env.PAYSTACK_PRO_KES_PLAN_CODE as string,
     successUrl: process.env.PAYSTACK_SUCCESS_URL as string,
     cancelUrl: process.env.PAYSTACK_CANCEL_URL as string,
   };

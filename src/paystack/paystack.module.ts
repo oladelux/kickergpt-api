@@ -6,4 +6,3 @@ import { PaystackClientService } from './paystack-client.service';
   exports: [PaystackClientService],
 })
 export class PaystackModule {}
-
