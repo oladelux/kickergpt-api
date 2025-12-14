@@ -1,4 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { AddonType } from '../domain/addon-type.enum';
+
+export class AddonPurchaseDto {
+  @ApiProperty()
+  addonType: AddonType;
+}
 
 export class PromptUsageSummaryDto {
   @ApiProperty()

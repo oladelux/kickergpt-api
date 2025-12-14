@@ -38,8 +38,13 @@ export class PaystackClientService {
 
   public initializeTransaction(
     data: InitializeTransaction,
+    transactionType: 'addon_purchase' | 'plan_purchase',
   ): Promise<TransactionInitialized | BadRequest> {
-    data.callback_url = this.buildUrl('/verify-payment');
+    if (transactionType === 'addon_purchase') {
+      data.callback_url = this.buildUrl('/verify-addon-purchase');
+    } else if (transactionType === 'plan_purchase') {
+      data.callback_url = this.buildUrl('/verify-payment');
+    }
     return this.paystack.transaction.initialize(data);
   }
 

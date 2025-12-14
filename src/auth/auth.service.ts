@@ -92,10 +92,12 @@ export class AuthService {
         error: 'emailNotVerified',
       });
     }
-    // Update user's country code from login request
-    await this.usersService.update(user.id, {
-      countryCode: loginDto.countryCode,
-    });
+    // Update user's country code from login request if it is not already set
+    if (!user.countryCode) {
+      await this.usersService.update(user.id, {
+        countryCode: loginDto.countryCode,
+      });
+    }
 
     const hash = crypto
       .createHash('sha256')
