@@ -17,6 +17,8 @@ import { SubscriptionStatus } from './domain/subscription-status.enum';
 import { PaymentProvider } from './domain/payment-provider.enum';
 import { StripeClientService } from '../stripe/stripe-client.service';
 import { PaystackClientService } from '../paystack/paystack-client.service';
+import { AddonType } from '../prompt-usage/domain/addon-type.enum';
+import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 
 @Injectable()
 export class SubscriptionsService {
@@ -27,6 +29,7 @@ export class SubscriptionsService {
     private readonly usersService: UsersService,
     private readonly stripeClient: StripeClientService,
     private readonly paystackClient: PaystackClientService,
+    private readonly promptUsageService: PromptUsageService,
     private readonly configService: ConfigService<AllConfigType>,
   ) {}
 
@@ -130,6 +133,11 @@ export class SubscriptionsService {
     }
   }
 
+  async purchaseAddon(addonType: AddonType, user: User): Promise<string> {
+    const subscription = await this.getSubscriptionForUser(user.id);
+    return this.handlePaystackAddonPurchase(addonType, subscription, user);
+  }
+
   async handlePlanSelection(
     userId: string,
     plan: SubscriptionPlan,
@@ -217,6 +225,73 @@ export class SubscriptionsService {
     return session.url;
   }
 
+  private async handlePaystackAddonPurchase(
+    addonType: AddonType,
+    subscription: Subscription,
+    user: User,
+  ): Promise<string> {
+    // Ensure Paystack customer exists
+    if (!subscription.paystackCustomerCode) {
+      subscription = await this.ensurePaystackCustomerForUser(user);
+    }
+    const amount = this.getAddonAmount(addonType);
+    const transactionResponse = await this.paystackClient.initializeTransaction(
+      {
+        email: user.email ?? '',
+        amount: amount.toString(),
+      },
+      'addon_purchase',
+    );
+    if (!transactionResponse.status) {
+      throw new Error('Transaction initialization failed');
+    }
+    if (transactionResponse.data === null) {
+      throw new Error('Transaction data is null');
+    }
+    if (!transactionResponse.data.authorization_url) {
+      throw new InternalServerErrorException(
+        'Paystack authorization url missing',
+      );
+    }
+    return transactionResponse.data.authorization_url;
+  }
+  private getAddonAmount(addonType: AddonType): number {
+    switch (addonType) {
+      case AddonType.TEN_PROMPT_CREDITS:
+        return 150000;
+      case AddonType.TWENTY_FIVE_PROMPT_CREDITS:
+        return 300000;
+      case AddonType.FIFTY_PROMPT_CREDITS:
+        return 500000;
+      default:
+        throw new BadRequestException('Invalid addon type');
+    }
+  }
+
+  private getAddonPurchaseByAmount(amount: number): AddonType {
+    switch (amount) {
+      case 150000:
+        return AddonType.TEN_PROMPT_CREDITS;
+      case 300000:
+        return AddonType.TWENTY_FIVE_PROMPT_CREDITS;
+      case 500000:
+        return AddonType.FIFTY_PROMPT_CREDITS;
+      default:
+        throw new BadRequestException('Invalid amount');
+    }
+  }
+
+  private getAddonCreditsByType(addonType: AddonType): number {
+    switch (addonType) {
+      case AddonType.TEN_PROMPT_CREDITS:
+        return 10;
+      case AddonType.TWENTY_FIVE_PROMPT_CREDITS:
+        return 25;
+      case AddonType.FIFTY_PROMPT_CREDITS:
+        return 50;
+    }
+  }
+
   private async handlePaystackPlanSelection(
     user: User,
     subscription: Subscription,
@@ -233,6 +308,7 @@ export class SubscriptionsService {
         amount: '10000',
         plan: planCode,
       },
+      'plan_purchase',
     );
 
     if (!transactionResponse.status) {
@@ -429,6 +505,48 @@ export class SubscriptionsService {
     return this.configService.getOrThrow('stripe.proPriceIdUsd', {
       infer: true,
     });
+  }
+
+  public async verifyPaystackAddonPurchase(reference: string, user: User) {
+    const transaction = await this.paystackClient.verifyTransaction(reference);
+    if (!transaction.status) {
+      throw new Error('Transaction verification failed');
+    }
+
+    if (transaction.data === null) {
+      throw new Error('Transaction data is null');
+    }
+    const customerCode = transaction.data.customer.customer_code;
+    const paystackCustomerId = customerCode;
+    const existingSubscription = await this.subscriptionRepository.findByUserId(
+      user.id,
+    );
+
+    if (!existingSubscription) {
+      throw new NotFoundException(`Subscription not found for user ${user.id}`);
+    }
+
+    const addonType = this.getAddonPurchaseByAmount(transaction.data.amount);
+
+    if (!addonType) {
+      throw new BadRequestException('Invalid amount');
+    }
+    const addonCredits = this.getAddonCreditsByType(addonType);
+    if (!addonCredits) {
+      throw new BadRequestException('Invalid addon type');
+    }
+
+    // We bump the addon credits in the prompt usage table
+    await this.promptUsageService.addAddonCredits(user.id, addonCredits);
+
+    const updatedSubscription = await this.subscriptionRepository.update(
+      existingSubscription.id,
+      {
+        paystackCustomerCode: paystackCustomerId,
+      },
+    );
+
+    return updatedSubscription;
   }
 
   public async verifyPayment(reference: string, user: User) {

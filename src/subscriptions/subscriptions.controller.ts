@@ -18,6 +18,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { PromptUsageSummaryDto } from '../prompt-usage/dto/prompt-usage-summary.dto';
 import { UsersService } from '../users/users.service';
+import { AddonType } from '../prompt-usage/domain/addon-type.enum';
 
 @ApiTags('Subscriptions')
 @ApiBearerAuth()
@@ -83,5 +84,44 @@ export class SubscriptionsController {
       throw new NotFoundException('User not found');
     }
     return this.subscriptionsService.verifyPayment(data.reference, user);
+  }
+
+  @Post('addon-purchase')
+  @ApiOkResponse({
+    type: Subscription,
+  })
+  async addonPurchase(
+    @Request() request,
+    @Body() data: { addonType: AddonType },
+  ): Promise<CheckoutResponseDto> {
+    const userId = request.user.id;
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    const checkoutUrl = await this.subscriptionsService.purchaseAddon(
+      data.addonType,
+      user,
+    );
+    return { checkoutUrl };
+  }
+
+  @Post('addon-purchase-verify')
+  @ApiOkResponse({
+    type: Subscription,
+  })
+  async addonPurchaseVerify(
+    @Request() request,
+    @Body() data: { reference: string },
+  ): Promise<Subscription> {
+    const userId = request.user.id;
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.subscriptionsService.verifyPaystackAddonPurchase(
+      data.reference,
+      user,
+    );
   }
 }
