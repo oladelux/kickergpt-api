@@ -18,10 +18,10 @@ export class BulkUserEmailScheduler {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('44 09 * * *')
+  @Cron('00 07 * * *')
   async sendBulkUserEmail(): Promise<void> {
-    this.logger.log('Bulk user email cron is disabled.');
-    return;
+    //this.logger.log('Bulk user email cron is disabled.');
+    //return;
 
     this.logger.log('Starting bulk user email job...');
     let offset = 0;
@@ -56,7 +56,7 @@ export class BulkUserEmailScheduler {
         const name = user.firstName?.trim() || user.lastName?.trim() || 'there';
 
         try {
-          await this.mailService.sendUpgradeQuestionEmail({
+          await this.mailService.sendProductUpdatesEmail({
             to: user.email as string,
             name,
           });

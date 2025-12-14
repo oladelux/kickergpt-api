@@ -289,7 +289,7 @@ export class MailService {
     const textBody = [
       'Hey,',
       '',
-      'I noticed you signed up for KickerGPT but haven’t upgraded to Pro.',
+      "I noticed you signed up for KickerGPT but haven't upgraded to Pro.",
       '',
       "I'm trying to make the product better, and I'd love to understand:",
       '1. What did you hope KickerGPT would do for you?',
@@ -314,6 +314,81 @@ export class MailService {
       context: {
         name,
         senderName,
+        unsubscribeUrl,
+      },
+    });
+  }
+
+  async sendProductUpdatesEmail(params: {
+    to: string;
+    name?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'product-updates.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      "We've been working hard to make KickerGPT better for you. Here's what's new:",
+      '',
+      '🎨 Enhanced User Interface',
+      "We've redesigned key parts of the app to make your experience smoother and more intuitive.",
+      '',
+      '📅 Extended Match Access',
+      'You can now access and analyze matches up to 3 days ahead, giving you more time to plan your strategy.',
+      '',
+      '💳 Flexible Prompt Top-ups',
+      'Exhausted your monthly prompts? You can now top up anytime—even without a PRO subscription.',
+      '',
+      '🚀 More Accurate Analysis Coming',
+      "We're adding more data context to deliver even deeper and more accurate match analysis. Stay tuned!",
+      '',
+      '⭐ Exclusive PRO Features Coming Soon',
+      'Basic Plan: 10 free prompts per month',
+      'PRO Plan: 100 prompts per month + exclusive features',
+      '',
+      'Follow us on X (Twitter) for more updates: @kickergpt',
+      'https://twitter.com/kickergpt',
+      '',
+      'Thanks for being part of the KickerGPT community!',
+      '',
+      'The KickerGPT Team',
+      '',
+      "You're receiving this email because you requested access to KickerGPT.",
+      "Need help? Reply to this email and we'll get back ASAP.",
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: "What's New at KickerGPT - Product Updates",
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
         unsubscribeUrl,
       },
     });
