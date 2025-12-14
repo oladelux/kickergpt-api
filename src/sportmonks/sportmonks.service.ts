@@ -311,6 +311,24 @@ export class SportmonksService {
     return result;
   }
 
+  private async getFixturesBetweenDates(
+    startDate: string,
+    endDate: string,
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    const resolvedTimezone = this.resolveTimezone(timezone);
+    const result = await this.getAllFixtures(
+      `/fixtures/between/${startDate}/${endDate}`,
+      {
+        include:
+          'participants;participants.venue;odds;venue;sidelined.sideline;sidelined.player.position;sidelined.type;league.country;season;scores;referees;referees.referee;state',
+        filters: 'markets:1;bookmakers:1',
+        timezone: resolvedTimezone,
+      },
+    );
+    return result;
+  }
+
   private resolveFinalScore(
     scores: SportmonksScore[],
   ): KickerGPTFixturesResponse['finalScore'] {
@@ -337,10 +355,10 @@ export class SportmonksService {
   }
 
   private async buildFixturesResponse(
-    date: string,
     timezone?: string,
   ): Promise<KickerGPTFixturesResponse[]> {
-    const result = await this.getFixturesByDate(date, timezone);
+    //const result = await this.getFixturesByDate(date, timezone);
+    const result = await this.getThreeDaysFixtures(timezone);
 
     return Promise.all(
       result.data.map(
@@ -496,10 +514,9 @@ export class SportmonksService {
   }
 
   async getFixturesResponseForDate(
-    date: string,
     timezone?: string,
   ): Promise<KickerGPTFixturesResponse[]> {
-    return this.buildFixturesResponse(date, timezone);
+    return this.buildFixturesResponse(timezone);
   }
 
   async getHeadToHeadFixtures(
@@ -562,6 +579,18 @@ export class SportmonksService {
     return this.getFixturesByDate(this.getToday(), timezone);
   }
 
+  async getThreeDaysFixtures(
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    const threeDaysFromToday = new Date(this.getToday());
+    threeDaysFromToday.setDate(threeDaysFromToday.getDate() + 3);
+    return this.getFixturesBetweenDates(
+      this.getToday(),
+      threeDaysFromToday.toISOString().split('T')[0],
+      timezone,
+    );
+  }
+
   async getControlRoomFixturesOfDay(
     date: string,
     timezone?: string,
@@ -569,8 +598,8 @@ export class SportmonksService {
     return this.getFixturesByDate(date, timezone);
   }
 
-  private buildSingleFixtureCacheKey(fixtureId: number, date?: string): string {
-    return `fixture:${date ?? this.getToday()}:${fixtureId}`;
+  private buildSingleFixtureCacheKey(fixtureId: number): string {
+    return `fixture:${fixtureId}`;
   }
 
   private buildFixturesIdsCacheKey(date?: string): string {
@@ -578,20 +607,19 @@ export class SportmonksService {
   }
 
   async getTodayFixturesForRedis(): Promise<KickerGPTFixturesResponse[]> {
-    const fixturesResponses = await this.buildFixturesResponse(this.getToday());
+    const fixturesResponses = await this.buildFixturesResponse();
 
     if (fixturesResponses.length === 0) {
       return [];
     }
 
-    const today = this.getToday();
     const fixtureIds: number[] = [];
 
     // Store each fixture separately using pipeline for efficiency
     const pipeline = this.redisService.pipeline();
 
     for (const fixture of fixturesResponses) {
-      const key = this.buildSingleFixtureCacheKey(fixture.id, today);
+      const key = this.buildSingleFixtureCacheKey(fixture.id);
       pipeline?.set(key, JSON.stringify(fixture), {
         ex: this.fixturesCacheTtlSeconds,
       });
@@ -605,9 +633,7 @@ export class SportmonksService {
 
     await pipeline?.exec();
 
-    this.logger.log(
-      `Cached ${fixturesResponses.length} fixtures individually for ${today}`,
-    );
+    this.logger.log(`Cached ${fixturesResponses.length} fixtures individually`);
 
     return fixturesResponses;
   }
@@ -661,7 +687,7 @@ export class SportmonksService {
     // Fetch all fixtures using pipeline
     const pipeline = this.redisService.pipeline();
     for (const id of fixtureIds) {
-      pipeline?.get(this.buildSingleFixtureCacheKey(id, date));
+      pipeline?.get(this.buildSingleFixtureCacheKey(id));
     }
 
     const results = await pipeline?.exec();
@@ -689,7 +715,7 @@ export class SportmonksService {
     fixtureId: number,
     date: string,
   ): Promise<KickerGPTFixturesResponse | undefined> {
-    const key = this.buildSingleFixtureCacheKey(fixtureId, date);
+    const key = this.buildSingleFixtureCacheKey(fixtureId);
 
     // Try to get from cache first
     const cached = await this.redisService.get<string>(key);
@@ -713,7 +739,7 @@ export class SportmonksService {
       `Fixture ${fixtureId} not in cache, fetching fixtures for ${date}`,
     );
 
-    const fixturesResponses = await this.buildFixturesResponse(date);
+    const fixturesResponses = await this.buildFixturesResponse();
 
     if (fixturesResponses.length === 0) {
       return undefined;
@@ -724,7 +750,7 @@ export class SportmonksService {
     const fixtureIds: number[] = [];
 
     for (const fixture of fixturesResponses) {
-      const fixtureKey = this.buildSingleFixtureCacheKey(fixture.id, date);
+      const fixtureKey = this.buildSingleFixtureCacheKey(fixture.id);
       pipeline?.set(fixtureKey, JSON.stringify(fixture), {
         ex: this.fixturesResponseCacheTtlSeconds,
       });
