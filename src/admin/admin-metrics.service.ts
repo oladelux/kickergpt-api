@@ -67,7 +67,7 @@ export class AdminMetricsService {
 
     const totalPromptsUsed = Number(promptUsageAgg?.totalPrompts ?? 0);
     const avgPromptUsagePerUser =
-      userCount > 0 ? totalPromptsUsed / userCount : 0;
+      userCount > 0 ? totalPromptsUsed / verifiedUserCount : 0;
 
     const exhaustedPromptUserCount = await this.countExhaustedUsers();
     const { todayStart, todayEnd, monthStart, monthEnd } =
