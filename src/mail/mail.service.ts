@@ -394,6 +394,79 @@ export class MailService {
     });
   }
 
+  async sendExhaustedPromptsEmail(params: {
+    to: string;
+    name?: string;
+    upgradeUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const upgradeUrl = params.upgradeUrl || 'https://www.kickergpt.com/plans';
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'prompt-exhausted-discount.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      "You've used all 10 of your free prompts this month.",
+      '',
+      "That puts you in the top 20% of KickerGPT users. Clearly you're finding the analysis useful.",
+      '',
+      'I want to make upgrading easy for you:',
+      '',
+      '90% off your first month of Pro',
+      '',
+      'Just ₦1,000 (normally ₦10,000)',
+      '',
+      'Offer is just available for the next 24hrs',
+      '',
+      'What you get:',
+      '- 100 prompts per month (10x more)',
+      '- Never hit the limit again',
+      '',
+      `Upgrade Now: ${upgradeUrl}`,
+      '',
+      "Or just reply and tell me what's holding you back. I read every response.",
+      '',
+      'Cheers,',
+      'KickerGPT',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: "You've used all your prompts - here's 90% off",
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        upgradeUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
