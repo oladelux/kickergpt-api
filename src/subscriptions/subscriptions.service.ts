@@ -305,7 +305,7 @@ export class SubscriptionsService {
     const transactionResponse = await this.paystackClient.initializeTransaction(
       {
         email: user.email ?? '',
-        amount: '10000',
+        amount: '1000',
         plan: planCode,
       },
       'plan_purchase',
