@@ -37,6 +37,10 @@ export abstract class SubscriptionRepository {
     paystackSubscriptionCode: Subscription['paystackSubscriptionCode'],
   ): Promise<NullableType<Subscription>>;
 
+  abstract findByRevenuecatUserId(
+    revenuecatUserId: Subscription['revenuecatUserId'],
+  ): Promise<NullableType<Subscription>>;
+
   abstract updatePlanAndStatus(
     id: Subscription['id'],
     data: {

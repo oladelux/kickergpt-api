@@ -17,5 +17,11 @@ export class PromptUsageSummaryDto {
   monthlyRemaining: number;
 
   @ApiProperty()
-  addonCreditsRemaining: number;
+  adCreditsRemaining: number;
+
+  @ApiProperty()
+  purchasedCreditsRemaining: number;
+
+  @ApiProperty()
+  totalCreditsRemaining: number;
 }

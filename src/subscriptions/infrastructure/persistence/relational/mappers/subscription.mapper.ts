@@ -15,6 +15,9 @@ export class SubscriptionMapper {
     domain.paymentProvider = raw.paymentProvider;
     domain.paystackCustomerCode = raw.paystackCustomerCode;
     domain.paystackSubscriptionCode = raw.paystackSubscriptionCode;
+    domain.revenuecatUserId = raw.revenuecatUserId;
+    domain.revenuecatProductId = raw.revenuecatProductId;
+    domain.revenuecatAutoRenew = raw.revenuecatAutoRenew;
     if (raw.user) {
       domain.user = UserMapper.toDomain(raw.user);
       domain.userId = raw.user.id;
@@ -40,6 +43,9 @@ export class SubscriptionMapper {
     persistence.paymentProvider = domain.paymentProvider;
     persistence.paystackCustomerCode = domain.paystackCustomerCode;
     persistence.paystackSubscriptionCode = domain.paystackSubscriptionCode;
+    persistence.revenuecatUserId = domain.revenuecatUserId;
+    persistence.revenuecatProductId = domain.revenuecatProductId;
+    persistence.revenuecatAutoRenew = domain.revenuecatAutoRenew;
     const user = new UserEntity();
     user.id = String(domain.user?.id ?? domain.userId);
     persistence.user = user;
