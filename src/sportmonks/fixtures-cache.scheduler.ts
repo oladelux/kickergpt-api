@@ -13,7 +13,7 @@ export class FixturesCacheScheduler {
     private readonly configService: ConfigService<AllConfigType>,
   ) {}
 
-  @Cron('0 0,6,12,18 * * *')
+  @Cron('25 02 * * *')
   async refreshTodayFixturesCache(): Promise<void> {
     if (
       this.configService.get('app.nodeEnv', { infer: true }) === 'development'

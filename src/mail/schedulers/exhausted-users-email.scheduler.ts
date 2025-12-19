@@ -29,8 +29,8 @@ export class ExhaustedUsersEmailScheduler {
 
   @Cron('30 14 * * *')
   async sendExhaustedUsersEmail(): Promise<void> {
-    //this.logger.log('Exhausted users email cron is disabled.');
-    //return;
+    this.logger.log('Exhausted users email cron is disabled.');
+    return;
 
     this.logger.log('Starting exhausted users email job...');
     let offset = 0;
