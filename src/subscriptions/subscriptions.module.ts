@@ -18,6 +18,6 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
   providers: [SubscriptionsService],
-  exports: [SubscriptionsService],
+  exports: [SubscriptionsService, RelationalSubscriptionPersistenceModule],
 })
 export class SubscriptionsModule {}

@@ -122,6 +122,18 @@ export class SubscriptionsService {
     const subscription = await this.subscriptionRepository.findByUserId(userId);
     const paymentProvider = this.determinePaymentProvider(user?.countryCode);
 
+    // Priority 1: Check RevenueCat subscription
+    if (
+      subscription &&
+      subscription.paymentProvider === PaymentProvider.REVENUECAT &&
+      subscription.status === SubscriptionStatus.ACTIVE &&
+      (!subscription.currentPeriodEnd ||
+        subscription.currentPeriodEnd > new Date())
+    ) {
+      return subscription;
+    }
+
+    // Priority 2 & 3: Check Stripe or Paystack
     if (subscription?.stripeCustomerId || subscription?.paystackCustomerCode) {
       return subscription;
     }

@@ -14,6 +14,21 @@ export class PromptUsage {
   addonCredits: number;
 
   @ApiProperty()
+  adCredits: number;
+
+  @ApiProperty()
+  purchasedCredits: number;
+
+  @ApiProperty()
+  lastAdWatchedAt: Date | null;
+
+  @ApiProperty()
+  adsWatchedToday: number;
+
+  @ApiProperty()
+  adsWatchDate: Date | null;
+
+  @ApiProperty()
   periodStart: Date;
 
   @ApiProperty()

@@ -86,6 +86,10 @@ export class SubscriptionsController {
     return this.subscriptionsService.verifyPayment(data.reference, user);
   }
 
+  /**
+   * @deprecated Addon purchases have been removed in favor of subscription-only model.
+   * This endpoint is kept for backward compatibility but should no longer be used.
+   */
   @Post('addon-purchase')
   @ApiOkResponse({
     type: Subscription,
@@ -106,6 +110,10 @@ export class SubscriptionsController {
     return { checkoutUrl };
   }
 
+  /**
+   * @deprecated Addon purchases have been removed in favor of subscription-only model.
+   * This endpoint is kept for backward compatibility but should no longer be used.
+   */
   @Post('addon-purchase-verify')
   @ApiOkResponse({
     type: Subscription,

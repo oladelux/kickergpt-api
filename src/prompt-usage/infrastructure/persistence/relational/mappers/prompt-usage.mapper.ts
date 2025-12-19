@@ -8,6 +8,11 @@ export class PromptUsageMapper {
     domain.userId = raw.userId;
     domain.promptsUsed = raw.promptsUsed;
     domain.addonCredits = raw.addonCredits;
+    domain.adCredits = raw.adCredits;
+    domain.purchasedCredits = raw.purchasedCredits;
+    domain.lastAdWatchedAt = raw.lastAdWatchedAt;
+    domain.adsWatchedToday = raw.adsWatchedToday;
+    domain.adsWatchDate = raw.adsWatchDate;
     domain.periodStart = new Date(raw.periodStart);
     domain.createdAt = new Date(raw.createdAt);
     domain.updatedAt = new Date(raw.updatedAt);
@@ -22,6 +27,11 @@ export class PromptUsageMapper {
     entity.userId = domain.userId;
     entity.promptsUsed = domain.promptsUsed;
     entity.addonCredits = domain.addonCredits;
+    entity.adCredits = domain.adCredits;
+    entity.purchasedCredits = domain.purchasedCredits;
+    entity.lastAdWatchedAt = domain.lastAdWatchedAt;
+    entity.adsWatchedToday = domain.adsWatchedToday;
+    entity.adsWatchDate = domain.adsWatchDate;
     entity.periodStart = domain.periodStart;
     entity.createdAt = domain.createdAt;
     entity.updatedAt = domain.updatedAt;

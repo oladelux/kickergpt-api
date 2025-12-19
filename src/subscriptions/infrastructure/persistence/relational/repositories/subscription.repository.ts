@@ -88,6 +88,15 @@ export class SubscriptionRelationalRepository
     return this.findBy({ paystackSubscriptionCode });
   }
 
+  findByRevenuecatUserId(
+    revenuecatUserId: string,
+  ): Promise<NullableType<Subscription>> {
+    if (!revenuecatUserId) {
+      return Promise.resolve(null);
+    }
+    return this.findBy({ revenuecatUserId });
+  }
+
   async updatePlanAndStatus(
     id: Subscription['id'],
     data: {
