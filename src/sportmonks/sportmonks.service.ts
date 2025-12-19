@@ -770,13 +770,24 @@ export class SportmonksService {
   async getThreeDaysFixturesOptimized(
     timezone?: string,
   ): Promise<SportmonksFixturesResponse> {
+    const startTime = Date.now();
+    this.logger.log('Fetching three-day fixtures (optimized)...');
+
     const threeDaysFromToday = new Date(this.getToday());
     threeDaysFromToday.setDate(threeDaysFromToday.getDate() + 2);
-    return this.getFixturesBetweenDatesOptimized(
+
+    const result = await this.getFixturesBetweenDatesOptimized(
       this.getToday(),
       threeDaysFromToday.toISOString().split('T')[0],
       timezone,
     );
+
+    const duration = Date.now() - startTime;
+    this.logger.log(
+      `Three-day fixtures fetch completed: ${result.data.length} fixtures in ${duration}ms`,
+    );
+
+    return result;
   }
 
   async getControlRoomFixturesOfDay(
