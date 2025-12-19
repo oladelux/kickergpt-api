@@ -297,6 +297,157 @@ export class SportmonksService {
     };
   }
 
+  /**
+   * Helper function to execute promises in controlled batches
+   * Prevents overwhelming the API with too many concurrent requests
+   */
+  private async fetchInBatches<T>(
+    promises: (() => Promise<T>)[],
+    batchSize: number = 5,
+  ): Promise<T[]> {
+    const results: T[] = [];
+
+    for (let i = 0; i < promises.length; i += batchSize) {
+      const batch = promises.slice(i, i + batchSize);
+      const batchResults = await Promise.all(batch.map((fn) => fn()));
+      results.push(...batchResults);
+      this.logger.log(
+        `Completed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(promises.length / batchSize)}`,
+      );
+    }
+
+    return results;
+  }
+
+  /**
+   * Optimized version of getAllFixtures that fetches pages in parallel
+   * Uses a semi-parallel approach: fetches batches of pages until has_more is false
+   */
+  private async getAllFixturesParallel(
+    path: string,
+    query: Record<string, string | number | undefined> = {},
+  ): Promise<SportmonksFixturesResponse> {
+    // Fetch first page with increased page size to get pagination info
+    const firstPageQuery = {
+      ...query,
+      page: 1,
+      per_page: 50, // Use maximum page size to reduce total pages
+    };
+
+    const firstResponse = await this.get<SportmonksFixturesResponse>(
+      path,
+      firstPageQuery,
+    );
+
+    // Handle cases where response or response.data is null/undefined
+    if (!firstResponse) {
+      this.logger.warn(`No response from Sportmonks API for ${path}`);
+      return {
+        timezone: '',
+        data: [],
+        pagination: {
+          count: 0,
+          per_page: 50,
+          current_page: 1,
+          next_page: null,
+          has_more: false,
+        },
+      };
+    }
+
+    const allFixtures: SportmonksFixture[] = [];
+    const firstPageFixtures = firstResponse.data;
+
+    if (!firstPageFixtures || !Array.isArray(firstPageFixtures)) {
+      this.logger.warn(`No fixtures data in response for ${path}`);
+      return {
+        timezone: firstResponse.timezone || '',
+        data: [],
+        pagination: {
+          count: 0,
+          per_page: 50,
+          current_page: 1,
+          next_page: null,
+          has_more: false,
+        },
+      };
+    }
+
+    // Add first page fixtures
+    allFixtures.push(...firstPageFixtures);
+
+    const timezone = firstResponse.timezone || '';
+    let hasMore = firstResponse.pagination?.has_more ?? false;
+    let currentPage = 1;
+
+    // Keep fetching pages in batches until has_more is false
+    while (hasMore) {
+      // Prepare batch of next 5 pages
+      const batchSize = 5;
+      const pagePromises: (() => Promise<SportmonksFixturesResponse>)[] = [];
+
+      for (let i = 0; i < batchSize; i++) {
+        const nextPage = currentPage + i + 1;
+        pagePromises.push(() =>
+          this.get<SportmonksFixturesResponse>(path, {
+            ...query,
+            page: nextPage,
+            per_page: 50,
+          }),
+        );
+      }
+
+      this.logger.log(
+        `Fetching pages ${currentPage + 1} to ${currentPage + batchSize} in parallel for ${path}...`,
+      );
+
+      // Fetch batch in parallel
+      const batchResponses = await Promise.all(pagePromises.map((fn) => fn()));
+
+      // Process responses and check if we should continue
+      hasMore = false;
+      for (const response of batchResponses) {
+        if (response?.data && Array.isArray(response.data)) {
+          // Only add if there's actual data
+          if (response.data.length > 0) {
+            allFixtures.push(...response.data);
+            // Check if this page indicates more pages exist
+            if (response.pagination?.has_more) {
+              hasMore = true;
+            }
+          }
+        }
+      }
+
+      currentPage += batchSize;
+
+      // Safety check: if we've fetched too many pages, stop
+      if (currentPage > 100) {
+        this.logger.warn(
+          `Reached safety limit of 100 pages for ${path}, stopping`,
+        );
+        break;
+      }
+    }
+
+    this.logger.log(
+      `Fetched ${allFixtures.length} total fixtures from ${path} (parallel)`,
+    );
+
+    // Return combined response
+    return {
+      timezone,
+      data: allFixtures,
+      pagination: {
+        count: allFixtures.length,
+        per_page: 50,
+        current_page: 1,
+        next_page: null,
+        has_more: false,
+      },
+    };
+  }
+
   private async getFixturesByDate(
     date: string,
     timezone?: string,
@@ -318,6 +469,27 @@ export class SportmonksService {
   ): Promise<SportmonksFixturesResponse> {
     const resolvedTimezone = this.resolveTimezone(timezone);
     const result = await this.getAllFixtures(
+      `/fixtures/between/${startDate}/${endDate}`,
+      {
+        include:
+          'participants;participants.venue;odds;venue;sidelined.sideline;sidelined.player.position;sidelined.type;league.country;season;scores;referees;referees.referee;state',
+        filters: 'markets:1;bookmakers:1',
+        timezone: resolvedTimezone,
+      },
+    );
+    return result;
+  }
+
+  /**
+   * Optimized version of getFixturesBetweenDates that uses parallel page fetching
+   */
+  private async getFixturesBetweenDatesOptimized(
+    startDate: string,
+    endDate: string,
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    const resolvedTimezone = this.resolveTimezone(timezone);
+    const result = await this.getAllFixturesParallel(
       `/fixtures/between/${startDate}/${endDate}`,
       {
         include:
@@ -585,6 +757,22 @@ export class SportmonksService {
     const threeDaysFromToday = new Date(this.getToday());
     threeDaysFromToday.setDate(threeDaysFromToday.getDate() + 3);
     return this.getFixturesBetweenDates(
+      this.getToday(),
+      threeDaysFromToday.toISOString().split('T')[0],
+      timezone,
+    );
+  }
+
+  /**
+   * Optimized version of getThreeDaysFixtures that uses parallel page fetching
+   * This significantly improves performance by fetching multiple pages concurrently
+   */
+  async getThreeDaysFixturesOptimized(
+    timezone?: string,
+  ): Promise<SportmonksFixturesResponse> {
+    const threeDaysFromToday = new Date(this.getToday());
+    threeDaysFromToday.setDate(threeDaysFromToday.getDate() + 2);
+    return this.getFixturesBetweenDatesOptimized(
       this.getToday(),
       threeDaysFromToday.toISOString().split('T')[0],
       timezone,
