@@ -103,6 +103,6 @@ export class SportmonksController {
   async getThreeDaysFixtures(
     @Query('timezone') timezone?: string,
   ): Promise<SportmonksFixturesResponse> {
-    return this.sportmonksService.getThreeDaysFixtures(timezone);
+    return this.sportmonksService.getThreeDaysFixturesOptimized(timezone);
   }
 }
