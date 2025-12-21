@@ -26,6 +26,21 @@ export class PromptUsageEntity extends EntityRelationalHelper {
   @Column({ type: 'integer', default: 0 })
   addonCredits: number;
 
+  @Column({ type: 'integer', default: 0 })
+  adCredits: number;
+
+  @Column({ type: 'integer', default: 0 })
+  purchasedCredits: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastAdWatchedAt: Date | null;
+
+  @Column({ type: 'integer', default: 0 })
+  adsWatchedToday: number;
+
+  @Column({ type: 'date', nullable: true })
+  adsWatchDate: Date | null;
+
   @Column({ type: 'date' })
   periodStart: Date;
 

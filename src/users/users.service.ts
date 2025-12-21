@@ -232,6 +232,10 @@ export class UsersService {
     await this.usersRepository.remove(id);
   }
 
+  async hardDelete(id: User['id']): Promise<void> {
+    await this.usersRepository.hardDelete(id);
+  }
+
   private async resolveRoleInput(
     roleInput?: RoleInput | null,
   ): Promise<Role | undefined> {

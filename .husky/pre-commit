@@ -1,2 +1,6 @@
-npm run lint
+# Only lint staged files that exist (exclude deleted files)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx)$')
+if [ -n "$STAGED_FILES" ]; then
+  echo "$STAGED_FILES" | xargs npx eslint
+fi
 npm run test -- --passWithNoTests

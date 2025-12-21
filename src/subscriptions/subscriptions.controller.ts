@@ -50,6 +50,7 @@ export class SubscriptionsController {
     const checkoutUrl = await this.subscriptionsService.handlePlanSelection(
       request.user.id,
       dto.plan,
+      dto.isNativeUser ?? false,
       dto.countryCode,
     );
 
@@ -92,7 +93,7 @@ export class SubscriptionsController {
   })
   async addonPurchase(
     @Request() request,
-    @Body() data: { addonType: AddonType },
+    @Body() data: { addonType: AddonType; isNativeUser: boolean },
   ): Promise<CheckoutResponseDto> {
     const userId = request.user.id;
     const user = await this.usersService.findById(userId);
@@ -102,6 +103,7 @@ export class SubscriptionsController {
     const checkoutUrl = await this.subscriptionsService.purchaseAddon(
       data.addonType,
       user,
+      data.isNativeUser,
     );
     return { checkoutUrl };
   }
@@ -123,5 +125,12 @@ export class SubscriptionsController {
       data.reference,
       user,
     );
+  }
+
+  @Post('cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: Subscription })
+  async cancel(@Request() request): Promise<Subscription> {
+    return this.subscriptionsService.cancelSubscription(request.user.id);
   }
 }

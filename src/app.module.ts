@@ -28,9 +28,11 @@ import stripeConfig from './stripe/config/stripe.config';
 import paystackConfig from './paystack/config/paystack.config';
 import weatherConfig from './weather/config/weather.config';
 import redisConfig from './redis/config/redis.config';
+import adsConfig from './ads/config/ads.config';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
 import { AdminModule } from './admin/admin.module';
+import { AdsModule } from './ads/ads.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -56,6 +58,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
         paystackConfig,
         weatherConfig,
         redisConfig,
+        adsConfig,
       ],
       envFilePath: ['.env'],
     }),
@@ -96,6 +99,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     SubscriptionsModule,
     PromptUsageModule,
     AdminModule,
+    AdsModule,
   ],
 })
 export class AppModule {}

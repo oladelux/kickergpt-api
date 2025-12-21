@@ -13,4 +13,6 @@ export abstract class PromptUsageRepository {
     id: string,
     payload: Partial<PromptUsage>,
   ): Promise<PromptUsage>;
+
+  abstract deleteByUserId(userId: string): Promise<void>;
 }
