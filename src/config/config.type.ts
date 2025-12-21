@@ -11,8 +11,6 @@ import { PaystackConfig } from '../paystack/config/paystack-config.type';
 import { WeatherConfig } from '../weather/config/weather-config.type';
 import { RedisConfig } from '../redis/config/redis-config.type';
 import { AdsConfig } from '../ads/config/ads-config.type';
-import { GooglePlayConfig } from '../mobile-purchases/config/google-play-config.type';
-import { RevenueCatConfig } from '../revenuecat/config/revenuecat-config.type';
 
 export type AllConfigType = {
   app: AppConfig;
@@ -28,6 +26,4 @@ export type AllConfigType = {
   weather?: WeatherConfig;
   redis: RedisConfig;
   ads: AdsConfig;
-  googlePlay: GooglePlayConfig;
-  revenuecat: RevenueCatConfig;
 };

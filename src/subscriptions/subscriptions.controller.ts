@@ -50,6 +50,7 @@ export class SubscriptionsController {
     const checkoutUrl = await this.subscriptionsService.handlePlanSelection(
       request.user.id,
       dto.plan,
+      dto.isNativeUser ?? false,
       dto.countryCode,
     );
 
@@ -86,17 +87,13 @@ export class SubscriptionsController {
     return this.subscriptionsService.verifyPayment(data.reference, user);
   }
 
-  /**
-   * @deprecated Addon purchases have been removed in favor of subscription-only model.
-   * This endpoint is kept for backward compatibility but should no longer be used.
-   */
   @Post('addon-purchase')
   @ApiOkResponse({
     type: Subscription,
   })
   async addonPurchase(
     @Request() request,
-    @Body() data: { addonType: AddonType },
+    @Body() data: { addonType: AddonType; isNativeUser: boolean },
   ): Promise<CheckoutResponseDto> {
     const userId = request.user.id;
     const user = await this.usersService.findById(userId);
@@ -106,14 +103,11 @@ export class SubscriptionsController {
     const checkoutUrl = await this.subscriptionsService.purchaseAddon(
       data.addonType,
       user,
+      data.isNativeUser,
     );
     return { checkoutUrl };
   }
 
-  /**
-   * @deprecated Addon purchases have been removed in favor of subscription-only model.
-   * This endpoint is kept for backward compatibility but should no longer be used.
-   */
   @Post('addon-purchase-verify')
   @ApiOkResponse({
     type: Subscription,
@@ -131,5 +125,12 @@ export class SubscriptionsController {
       data.reference,
       user,
     );
+  }
+
+  @Post('cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({ type: Subscription })
+  async cancel(@Request() request): Promise<Subscription> {
+    return this.subscriptionsService.cancelSubscription(request.user.id);
   }
 }

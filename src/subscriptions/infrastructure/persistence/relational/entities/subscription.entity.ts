@@ -59,16 +59,6 @@ export class SubscriptionEntity extends EntityRelationalHelper {
   @Column({ type: 'varchar', nullable: true, unique: true })
   paystackSubscriptionCode: string | null;
 
-  @Index('IDX_subscription_revenuecat_user')
-  @Column({ type: 'varchar', nullable: true })
-  revenuecatUserId: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  revenuecatProductId: string | null;
-
-  @Column({ type: 'boolean', nullable: true, default: true })
-  revenuecatAutoRenew: boolean | null;
-
   @Column({ type: 'timestamptz', nullable: true })
   currentPeriodEnd: Date | null;
 

@@ -19,7 +19,11 @@ import { PromptUsageEntity } from '../prompt-usage/infrastructure/persistence/re
       PromptUsageEntity,
     ]),
   ],
-  providers: [MailService, BulkUserEmailScheduler, ExhaustedUsersEmailScheduler],
+  providers: [
+    MailService,
+    BulkUserEmailScheduler,
+    ExhaustedUsersEmailScheduler,
+  ],
   exports: [MailService],
 })
 export class MailModule {}

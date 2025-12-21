@@ -30,15 +30,6 @@ export class Subscription {
   paystackSubscriptionCode: string | null;
 
   @ApiProperty({ nullable: true })
-  revenuecatUserId: string | null;
-
-  @ApiProperty({ nullable: true })
-  revenuecatProductId: string | null;
-
-  @ApiProperty({ nullable: true })
-  revenuecatAutoRenew: boolean | null;
-
-  @ApiProperty({ nullable: true })
   currentPeriodEnd: Date | null;
 
   @ApiProperty({ type: () => User, required: false })

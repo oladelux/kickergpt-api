@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
 import { SubscriptionPlan } from '../domain/subscription-plan.enum';
 
 export class SelectPlanDto {
@@ -16,4 +22,14 @@ export class SelectPlanDto {
   @IsString()
   @Length(2, 2)
   countryCode?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Indicates if the payment is initiated from a native Capacitor app. When true, the success URL will be a deep link instead of a web URL.',
+    example: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isNativeUser?: boolean;
 }

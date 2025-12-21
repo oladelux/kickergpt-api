@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   Injectable,
+  Inject,
+  forwardRef,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -27,11 +29,25 @@ export class SubscriptionsService {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => StripeClientService))
     private readonly stripeClient: StripeClientService,
     private readonly paystackClient: PaystackClientService,
     private readonly promptUsageService: PromptUsageService,
     private readonly configService: ConfigService<AllConfigType>,
   ) {}
+
+  async getActiveSubscriptionByStripeCustomerId(
+    stripeCustomerId: string,
+  ): Promise<Subscription | null> {
+    return this.subscriptionRepository.findByStripeCustomerId(stripeCustomerId);
+  }
+
+  async updateUserSubscription(
+    userId: string,
+    payload: Partial<Omit<Subscription, 'id'>>,
+  ): Promise<Subscription> {
+    return this.subscriptionRepository.updateByUserId(userId, payload);
+  }
 
   async ensureStripeCustomerForUser(user: User): Promise<Subscription> {
     const subscription = await this.subscriptionRepository.findByUserId(
@@ -122,18 +138,7 @@ export class SubscriptionsService {
     const subscription = await this.subscriptionRepository.findByUserId(userId);
     const paymentProvider = this.determinePaymentProvider(user?.countryCode);
 
-    // Priority 1: Check RevenueCat subscription
-    if (
-      subscription &&
-      subscription.paymentProvider === PaymentProvider.REVENUECAT &&
-      subscription.status === SubscriptionStatus.ACTIVE &&
-      (!subscription.currentPeriodEnd ||
-        subscription.currentPeriodEnd > new Date())
-    ) {
-      return subscription;
-    }
-
-    // Priority 2 & 3: Check Stripe or Paystack
+    // Check Stripe or Paystack
     if (subscription?.stripeCustomerId || subscription?.paystackCustomerCode) {
       return subscription;
     }
@@ -145,14 +150,24 @@ export class SubscriptionsService {
     }
   }
 
-  async purchaseAddon(addonType: AddonType, user: User): Promise<string> {
+  async purchaseAddon(
+    addonType: AddonType,
+    user: User,
+    isNativeUser: boolean,
+  ): Promise<string> {
     const subscription = await this.getSubscriptionForUser(user.id);
-    return this.handlePaystackAddonPurchase(addonType, subscription, user);
+    return this.handlePaystackAddonPurchase(
+      addonType,
+      subscription,
+      user,
+      isNativeUser,
+    );
   }
 
   async handlePlanSelection(
     userId: string,
     plan: SubscriptionPlan,
+    isNativeUser: boolean,
     countryCode?: string,
   ): Promise<string | null> {
     const subscription = await this.getSubscriptionForUser(userId);
@@ -188,7 +203,7 @@ export class SubscriptionsService {
 
     // Route to appropriate payment provider
     if (paymentProvider === PaymentProvider.PAYSTACK) {
-      return this.handlePaystackPlanSelection(user, subscription);
+      return this.handlePaystackPlanSelection(user, subscription, isNativeUser);
     } else {
       return this.handleStripePlanSelection(user, subscription, countryCode);
     }
@@ -241,6 +256,7 @@ export class SubscriptionsService {
     addonType: AddonType,
     subscription: Subscription,
     user: User,
+    isNativeUser: boolean,
   ): Promise<string> {
     // Ensure Paystack customer exists
     if (!subscription.paystackCustomerCode) {
@@ -253,6 +269,7 @@ export class SubscriptionsService {
         amount: amount.toString(),
       },
       'addon_purchase',
+      isNativeUser,
     );
     if (!transactionResponse.status) {
       throw new Error('Transaction initialization failed');
@@ -307,6 +324,7 @@ export class SubscriptionsService {
   private async handlePaystackPlanSelection(
     user: User,
     subscription: Subscription,
+    isNativeUser: boolean,
   ): Promise<string> {
     // Ensure Paystack customer exists
     if (!subscription.paystackCustomerCode) {
@@ -321,6 +339,7 @@ export class SubscriptionsService {
         plan: planCode,
       },
       'plan_purchase',
+      isNativeUser,
     );
 
     if (!transactionResponse.status) {
@@ -340,7 +359,7 @@ export class SubscriptionsService {
     return transactionResponse.data.authorization_url;
   }
 
-  async handleStripeSubscriptionEvent(
+  /*   async handleStripeSubscriptionEvent(
     stripeSubscription: Stripe.Subscription,
   ): Promise<void> {
     const stripeCustomerId = this.resolveStripeCustomerId(
@@ -363,9 +382,10 @@ export class SubscriptionsService {
       );
       return;
     }
+    console.log('stripeSubscription', stripeSubscription);
 
     const isActive = this.isStripeStatusActive(stripeSubscription.status);
-
+    console.log('isActive', isActive);
     await this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
       plan: isActive ? SubscriptionPlan.PRO : SubscriptionPlan.FREE,
       status: isActive
@@ -381,7 +401,7 @@ export class SubscriptionsService {
           ? new Date(stripeSubscription.current_period_end * 1000)
           : null,
     });
-  }
+  } */
 
   private buildCustomerName(user: User): string | undefined {
     const name = [user.firstName, user.lastName]
@@ -609,5 +629,98 @@ export class SubscriptionsService {
       );
 
     return updatedSubscription;
+  }
+
+  async cancelSubscription(userId: string): Promise<Subscription> {
+    const subscription = await this.subscriptionRepository.findByUserId(userId);
+
+    if (!subscription) {
+      throw new NotFoundException('Subscription not found');
+    }
+
+    // Cancel Stripe subscription if it exists
+    if (subscription.stripeSubscriptionId) {
+      try {
+        await this.stripeClient.cancelSubscription(
+          subscription.stripeSubscriptionId,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to cancel Stripe subscription ${subscription.stripeSubscriptionId}: ${error.message}`,
+        );
+        // Continue with database update even if Stripe cancellation fails
+      }
+    }
+
+    // Cancel Paystack subscription if it exists
+    if (subscription.paystackSubscriptionCode) {
+      try {
+        await this.paystackClient.disableSubscription(
+          subscription.paystackSubscriptionCode,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to cancel Paystack subscription ${subscription.paystackSubscriptionCode}: ${error.message}`,
+        );
+        // Continue with database update even if Paystack cancellation fails
+      }
+    }
+
+    // Update subscription in database
+    return this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
+      plan: SubscriptionPlan.FREE,
+      status: SubscriptionStatus.INACTIVE,
+      stripeSubscriptionId: null,
+      paystackSubscriptionCode: null,
+      paystackCustomerCode: subscription.paystackCustomerCode,
+      stripeCustomerId: subscription.stripeCustomerId,
+      paymentProvider: subscription.paymentProvider,
+      currentPeriodEnd: null,
+    });
+  }
+
+  async cancelSubscriptionForUser(userId: string): Promise<void> {
+    const subscription = await this.subscriptionRepository.findByUserId(userId);
+
+    if (!subscription) {
+      // No subscription found, nothing to cancel
+      return;
+    }
+
+    // Cancel Stripe subscription if it exists
+    if (subscription.stripeSubscriptionId) {
+      try {
+        await this.stripeClient.cancelSubscription(
+          subscription.stripeSubscriptionId,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to cancel Stripe subscription ${subscription.stripeSubscriptionId}: ${error.message}`,
+        );
+        // Continue even if cancellation fails
+      }
+    }
+
+    // Cancel Paystack subscription if it exists
+    if (subscription.paystackSubscriptionCode) {
+      try {
+        await this.paystackClient.disableSubscription(
+          subscription.paystackSubscriptionCode,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to cancel Paystack subscription ${subscription.paystackSubscriptionCode}: ${error.message}`,
+        );
+        // Continue even if cancellation fails
+      }
+    }
+  }
+
+  findByUserId(userId: Subscription['userId']) {
+    return this.subscriptionRepository.findByUserId(userId);
+  }
+
+  async deleteSubscriptionByUserId(userId: string): Promise<void> {
+    await this.subscriptionRepository.deleteByUserId(userId);
   }
 }

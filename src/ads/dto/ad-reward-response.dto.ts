@@ -21,4 +21,3 @@ export class AdRewardResponseDto {
   @ApiProperty()
   nextAdAvailable: string | null;
 }
-

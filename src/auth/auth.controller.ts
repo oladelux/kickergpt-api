@@ -156,6 +156,6 @@ export class AuthController {
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.NO_CONTENT)
   public async delete(@Request() request): Promise<void> {
-    return this.service.softDelete(request.user);
+    return await this.service.deleteAccount(request.user);
   }
 }

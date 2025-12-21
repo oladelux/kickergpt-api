@@ -12,4 +12,3 @@ import adsConfig from './config/ads.config';
   exports: [AdsService],
 })
 export class AdsModule {}
-

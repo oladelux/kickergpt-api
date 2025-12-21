@@ -3,4 +3,3 @@ export type AdsConfig = {
   adCooldownMinutes: number;
   creditsPerAd: number;
 };
-
