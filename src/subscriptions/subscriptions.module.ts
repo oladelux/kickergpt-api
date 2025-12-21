@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
 import { UsersModule } from '../users/users.module';
 import { StripeModule } from '../stripe/stripe.module';
 import { PaystackModule } from '../paystack/paystack.module';
@@ -15,6 +16,7 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
     forwardRef(() => StripeModule),
     PaystackModule,
     PromptUsageModule,
+    JwtModule.register({}),
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
   providers: [SubscriptionsService],
