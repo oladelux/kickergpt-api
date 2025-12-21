@@ -40,26 +40,55 @@ export class PromptUsageService {
     const allowance = this.getMonthlyAllowance(params.plan, params.status);
     const monthlyRemaining = allowance - usage.promptsUsed;
 
-    if (monthlyRemaining >= amount) {
-      return this.repository.update(usage.id, {
-        promptsUsed: usage.promptsUsed + amount,
-      });
-    }
+    // Calculate total available credits
+    const totalAvailable =
+      usage.adCredits +
+      usage.purchasedCredits +
+      usage.addonCredits +
+      monthlyRemaining;
 
-    const addonAvailable = usage.addonCredits;
-    if (monthlyRemaining + addonAvailable < amount) {
+    if (totalAvailable < amount) {
       throw new ForbiddenException({
         message: 'promptLimitReached',
       });
     }
 
-    const monthlyPortion = Math.max(monthlyRemaining, 0);
-    const addonPortion = amount - monthlyPortion;
+    // Priority order: ad credits -> purchased credits -> addon credits -> monthly allowance
+    let remaining = amount;
+    const updates: Partial<PromptUsage> = {};
 
-    return this.repository.update(usage.id, {
-      promptsUsed: usage.promptsUsed + monthlyPortion,
-      addonCredits: usage.addonCredits - addonPortion,
-    });
+    // 1. Consume ad credits first
+    const adCredits = usage.adCredits ?? 0;
+    if (remaining > 0 && adCredits > 0) {
+      const adPortion = Math.min(remaining, adCredits);
+      updates.adCredits = adCredits - adPortion;
+      remaining -= adPortion;
+    }
+
+    // 2. Consume purchased credits
+    const purchasedCredits = usage.purchasedCredits ?? 0;
+    if (remaining > 0 && purchasedCredits > 0) {
+      const purchasedPortion = Math.min(remaining, purchasedCredits);
+      updates.purchasedCredits = purchasedCredits - purchasedPortion;
+      remaining -= purchasedPortion;
+    }
+
+    // 3. Consume addon credits
+    const addonCredits = usage.addonCredits ?? 0;
+    if (remaining > 0 && addonCredits > 0) {
+      const addonPortion = Math.min(remaining, addonCredits);
+      updates.addonCredits = addonCredits - addonPortion;
+      remaining -= addonPortion;
+    }
+
+    // 4. Consume monthly allowance
+    if (remaining > 0 && monthlyRemaining > 0) {
+      const monthlyPortion = Math.min(remaining, monthlyRemaining);
+      updates.promptsUsed = usage.promptsUsed + monthlyPortion;
+      remaining -= monthlyPortion;
+    }
+
+    return this.repository.update(usage.id, updates);
   }
 
   async addAddonCredits(userId: string, credits: number): Promise<PromptUsage> {
@@ -69,7 +98,42 @@ export class PromptUsageService {
 
     const usage = await this.getUsage(userId);
     return this.repository.update(usage.id, {
-      addonCredits: usage.addonCredits + credits,
+      addonCredits: (usage.addonCredits ?? 0) + credits,
+    });
+  }
+
+  async addAdCredits(
+    userId: string,
+    credits: number,
+    adsWatchedToday: number,
+    lastAdWatchedAt: Date,
+  ): Promise<PromptUsage> {
+    if (credits <= 0) {
+      throw new Error('Ad credits must be positive');
+    }
+
+    const usage = await this.getUsage(userId);
+    const today = new Date().toISOString().split('T')[0];
+
+    return this.repository.update(usage.id, {
+      adCredits: (usage.adCredits ?? 0) + credits,
+      adsWatchedToday,
+      lastAdWatchedAt,
+      adsWatchDate: new Date(today),
+    });
+  }
+
+  async addPurchasedCredits(
+    userId: string,
+    credits: number,
+  ): Promise<PromptUsage> {
+    if (credits <= 0) {
+      throw new Error('Purchased credits must be positive');
+    }
+
+    const usage = await this.getUsage(userId);
+    return this.repository.update(usage.id, {
+      purchasedCredits: (usage.purchasedCredits ?? 0) + credits,
     });
   }
 
@@ -82,11 +146,21 @@ export class PromptUsageService {
     const allowance = this.getMonthlyAllowance(params.plan, params.status);
     const remaining = Math.max(allowance - usage.promptsUsed, 0);
 
+    const adCredits = usage.adCredits ?? 0;
+    const purchasedCredits = usage.purchasedCredits ?? 0;
+    const addonCredits = usage.addonCredits ?? 0;
+
+    const totalCreditsRemaining =
+      remaining + adCredits + purchasedCredits + addonCredits;
+
     return {
       monthlyAllowance: allowance,
       monthlyUsed: usage.promptsUsed,
       monthlyRemaining: remaining,
-      addonCreditsRemaining: usage.addonCredits,
+      adCreditsRemaining: adCredits,
+      purchasedCreditsRemaining: purchasedCredits,
+      addonCreditsRemaining: addonCredits,
+      totalCreditsRemaining,
     };
   }
 
@@ -124,5 +198,9 @@ export class PromptUsageService {
   private calculateCurrentPeriodStart(): Date {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  async deleteByUserId(userId: string): Promise<void> {
+    await this.repository.deleteByUserId(userId);
   }
 }

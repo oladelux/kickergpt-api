@@ -45,4 +45,8 @@ export class PromptUsageRelationalRepository implements PromptUsageRepository {
     const saved = await this.repository.save(updated);
     return PromptUsageMapper.toDomain(saved);
   }
+
+  async deleteByUserId(userId: string): Promise<void> {
+    await this.repository.delete({ userId });
+  }
 }

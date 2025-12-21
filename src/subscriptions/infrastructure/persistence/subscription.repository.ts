@@ -17,6 +17,13 @@ export abstract class SubscriptionRepository {
     >,
   ): Promise<Subscription>;
 
+  abstract updateByUserId(
+    userId: User['id'],
+    payload: Partial<
+      Omit<Subscription, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>
+    >,
+  ): Promise<Subscription>;
+
   abstract findByUserId(
     userId: User['id'],
   ): Promise<NullableType<Subscription>>;
@@ -50,4 +57,6 @@ export abstract class SubscriptionRepository {
       currentPeriodEnd: Subscription['currentPeriodEnd'];
     },
   ): Promise<Subscription>;
+
+  abstract deleteByUserId(userId: User['id']): Promise<void>;
 }

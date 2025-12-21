@@ -104,10 +104,38 @@ export class SubscriptionRelationalRepository
     return this.update(id, data);
   }
 
+  async updateByUserId(
+    userId: string,
+    payload: Partial<
+      Omit<Subscription, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>
+    >,
+  ): Promise<Subscription> {
+    const existing = await this.repository.findOne({
+      where: { userId: String(userId) },
+    });
+    if (!existing) {
+      throw new Error('Subscription not found');
+    }
+
+    const domain = SubscriptionMapper.toDomain(existing);
+    const updated = this.repository.create(
+      SubscriptionMapper.toPersistence({
+        ...domain,
+        ...payload,
+      } as Subscription),
+    );
+    const saved = await this.repository.save(updated);
+    return SubscriptionMapper.toDomain(saved);
+  }
+
   private async findBy(
     where: FindOptionsWhere<SubscriptionEntity>,
   ): Promise<NullableType<Subscription>> {
     const entity = await this.repository.findOne({ where });
     return entity ? SubscriptionMapper.toDomain(entity) : null;
+  }
+
+  async deleteByUserId(userId: string): Promise<void> {
+    await this.repository.delete({ userId: String(userId) });
   }
 }

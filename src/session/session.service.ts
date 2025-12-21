@@ -42,4 +42,8 @@ export class SessionService {
   }): Promise<void> {
     return this.sessionRepository.deleteByUserIdWithExclude(conditions);
   }
+
+  hardDeleteByUserId(conditions: { userId: User['id'] }): Promise<void> {
+    return this.sessionRepository.hardDeleteByUserId(conditions);
+  }
 }

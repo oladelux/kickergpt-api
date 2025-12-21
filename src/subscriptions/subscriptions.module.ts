@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { UsersModule } from '../users/users.module';
 import { StripeModule } from '../stripe/stripe.module';
 import { PaystackModule } from '../paystack/paystack.module';
@@ -12,12 +12,12 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
   imports: [
     RelationalSubscriptionPersistenceModule,
     UsersModule,
-    StripeModule,
+    forwardRef(() => StripeModule),
     PaystackModule,
     PromptUsageModule,
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
   providers: [SubscriptionsService],
-  exports: [SubscriptionsService],
+  exports: [SubscriptionsService, RelationalSubscriptionPersistenceModule],
 })
 export class SubscriptionsModule {}

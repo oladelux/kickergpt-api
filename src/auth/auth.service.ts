@@ -29,6 +29,7 @@ import { SessionService } from '../session/session.service';
 import { StatusEnum } from '../statuses/statuses.enum';
 import { User } from '../users/domain/user';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 
 @Injectable()
 export class AuthService {
@@ -39,6 +40,7 @@ export class AuthService {
     private mailService: MailService,
     private configService: ConfigService<AllConfigType>,
     private subscriptionsService: SubscriptionsService,
+    private promptUsageService: PromptUsageService,
   ) {}
 
   async validateLogin(loginDto: AuthEmailLoginDto): Promise<LoginResponseDto> {
@@ -588,6 +590,23 @@ export class AuthService {
 
   async softDelete(user: User): Promise<void> {
     await this.usersService.remove(user.id);
+  }
+
+  async deleteAccount(user: User): Promise<void> {
+    // 1. Cancel active subscriptions (Stripe and Paystack)
+    await this.subscriptionsService.cancelSubscriptionForUser(user.id);
+
+    // 2. Hard delete all user sessions (must be hard delete to remove foreign key constraint)
+    await this.sessionService.hardDeleteByUserId({ userId: user.id });
+
+    // 3. Delete subscription record (if exists)
+    await this.subscriptionsService.deleteSubscriptionByUserId(user.id);
+
+    // 4. Delete prompt usage record (if exists)
+    await this.promptUsageService.deleteByUserId(user.id);
+
+    // 5. Hard delete the user
+    await this.usersService.hardDelete(user.id);
   }
 
   async logout(data: Pick<JwtRefreshPayloadType, 'sessionId'>) {

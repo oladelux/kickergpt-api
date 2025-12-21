@@ -37,4 +37,6 @@ export abstract class UserRepository {
   ): Promise<User | null>;
 
   abstract remove(id: User['id']): Promise<void>;
+
+  abstract hardDelete(id: User['id']): Promise<void>;
 }

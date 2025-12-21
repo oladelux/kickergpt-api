@@ -10,6 +10,7 @@ import { MailModule } from '../mail/mail.module';
 import { SessionModule } from '../session/session.module';
 import { UsersModule } from '../users/users.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
+import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
     PassportModule,
     MailModule,
     SubscriptionsModule,
+    PromptUsageModule,
     JwtModule.register({}),
   ],
   controllers: [AuthController],

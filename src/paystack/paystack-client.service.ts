@@ -39,11 +39,18 @@ export class PaystackClientService {
   public initializeTransaction(
     data: InitializeTransaction,
     transactionType: 'addon_purchase' | 'plan_purchase',
+    isNativeUser: boolean,
   ): Promise<TransactionInitialized | BadRequest> {
     if (transactionType === 'addon_purchase') {
-      data.callback_url = this.buildUrl('/verify-addon-purchase');
+      data.callback_url = this.buildUrl(
+        isNativeUser
+          ? '/verify-addon-purchase?isNative=true'
+          : '/verify-addon-purchase',
+      );
     } else if (transactionType === 'plan_purchase') {
-      data.callback_url = this.buildUrl('/verify-payment');
+      data.callback_url = this.buildUrl(
+        isNativeUser ? '/verify-payment?isNative=true' : '/verify-payment',
+      );
     }
     return this.paystack.transaction.initialize(data);
   }
@@ -75,5 +82,21 @@ export class PaystackClientService {
     return this.paystack.subscription.create(data) as Promise<
       SubscriptionCreated | BadRequest
     >;
+  }
+
+  public async disableSubscription(subscriptionCode: string): Promise<any> {
+    try {
+      // Paystack disable subscription API call
+      // The token parameter is optional for server-side operations
+      return await this.paystack.subscription.disable({
+        code: subscriptionCode,
+        token: '', // Empty token for server-side disable
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to disable Paystack subscription ${subscriptionCode}: ${error.message}`,
+      );
+      throw error;
+    }
   }
 }
