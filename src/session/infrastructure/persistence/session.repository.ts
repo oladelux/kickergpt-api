@@ -24,4 +24,8 @@ export abstract class SessionRepository {
     userId: User['id'];
     excludeSessionId: Session['id'];
   }): Promise<void>;
+
+  abstract hardDeleteByUserId(conditions: {
+    userId: User['id'];
+  }): Promise<void>;
 }

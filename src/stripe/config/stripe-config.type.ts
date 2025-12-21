@@ -7,4 +7,6 @@ export type StripeConfig = {
   proPriceIdGbp: string;
   successUrl: string;
   cancelUrl: string;
+  nativeAppDeepLinkScheme?: string;
+  nativeAppSuccessRoute?: string;
 };

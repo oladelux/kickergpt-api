@@ -85,4 +85,12 @@ export class SessionRelationalRepository implements SessionRepository {
       id: Not(String(conditions.excludeSessionId)),
     });
   }
+
+  async hardDeleteByUserId(conditions: { userId: User['id'] }): Promise<void> {
+    await this.sessionRepository.delete({
+      user: {
+        id: String(conditions.userId),
+      },
+    });
+  }
 }

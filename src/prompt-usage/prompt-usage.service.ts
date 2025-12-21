@@ -42,7 +42,10 @@ export class PromptUsageService {
 
     // Calculate total available credits
     const totalAvailable =
-      usage.adCredits + usage.purchasedCredits + monthlyRemaining;
+      usage.adCredits +
+      usage.purchasedCredits +
+      usage.addonCredits +
+      monthlyRemaining;
 
     if (totalAvailable < amount) {
       throw new ForbiddenException({
@@ -50,7 +53,7 @@ export class PromptUsageService {
       });
     }
 
-    // Priority order: ad credits -> purchased credits -> monthly allowance
+    // Priority order: ad credits -> purchased credits -> addon credits -> monthly allowance
     let remaining = amount;
     const updates: Partial<PromptUsage> = {};
 
@@ -70,7 +73,15 @@ export class PromptUsageService {
       remaining -= purchasedPortion;
     }
 
-    // 3. Consume monthly allowance
+    // 3. Consume addon credits
+    const addonCredits = usage.addonCredits ?? 0;
+    if (remaining > 0 && addonCredits > 0) {
+      const addonPortion = Math.min(remaining, addonCredits);
+      updates.addonCredits = addonCredits - addonPortion;
+      remaining -= addonPortion;
+    }
+
+    // 4. Consume monthly allowance
     if (remaining > 0 && monthlyRemaining > 0) {
       const monthlyPortion = Math.min(remaining, monthlyRemaining);
       updates.promptsUsed = usage.promptsUsed + monthlyPortion;
@@ -137,8 +148,10 @@ export class PromptUsageService {
 
     const adCredits = usage.adCredits ?? 0;
     const purchasedCredits = usage.purchasedCredits ?? 0;
+    const addonCredits = usage.addonCredits ?? 0;
 
-    const totalCreditsRemaining = remaining + adCredits + purchasedCredits;
+    const totalCreditsRemaining =
+      remaining + adCredits + purchasedCredits + addonCredits;
 
     return {
       monthlyAllowance: allowance,
@@ -146,6 +159,7 @@ export class PromptUsageService {
       monthlyRemaining: remaining,
       adCreditsRemaining: adCredits,
       purchasedCreditsRemaining: purchasedCredits,
+      addonCreditsRemaining: addonCredits,
       totalCreditsRemaining,
     };
   }
@@ -184,5 +198,9 @@ export class PromptUsageService {
   private calculateCurrentPeriodStart(): Date {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  async deleteByUserId(userId: string): Promise<void> {
+    await this.repository.deleteByUserId(userId);
   }
 }

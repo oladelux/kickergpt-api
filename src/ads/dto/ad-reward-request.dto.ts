@@ -10,4 +10,3 @@ export class AdRewardRequestDto {
   @IsPositive()
   creditsEarned: number;
 }
-

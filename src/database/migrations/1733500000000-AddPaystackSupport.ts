@@ -89,4 +89,3 @@ export class AddPaystackSupport1733500000000 implements MigrationInterface {
     );
   }
 }
-

@@ -123,4 +123,8 @@ export class UsersRelationalRepository implements UserRepository {
   async remove(id: User['id']): Promise<void> {
     await this.usersRepository.softDelete(id);
   }
+
+  async hardDelete(id: User['id']): Promise<void> {
+    await this.usersRepository.delete(id);
+  }
 }

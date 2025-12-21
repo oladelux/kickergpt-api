@@ -26,4 +26,3 @@ export default registerAs<AdsConfig>('ads', () => {
     creditsPerAd: parseInt(process.env.CREDITS_PER_AD ?? '5', 10),
   };
 });
-

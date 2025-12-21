@@ -13,7 +13,6 @@ import { Request } from 'express';
 import { ApiTags } from '@nestjs/swagger';
 import Stripe from 'stripe';
 import { StripeClientService } from '../stripe/stripe-client.service';
-import { SubscriptionsService } from './subscriptions.service';
 
 @ApiTags('Stripe Webhook')
 @Controller({
@@ -23,10 +22,7 @@ import { SubscriptionsService } from './subscriptions.service';
 export class StripeWebhookController {
   private readonly logger = new Logger(StripeWebhookController.name);
 
-  constructor(
-    private readonly stripeClient: StripeClientService,
-    private readonly subscriptionsService: SubscriptionsService,
-  ) {}
+  constructor(private readonly stripeClient: StripeClientService) {}
 
   @Get('webhook')
   public health(): string {
@@ -55,14 +51,97 @@ export class StripeWebhookController {
 
     switch (event.type) {
       case 'customer.subscription.created':
-      case 'customer.subscription.updated':
-      case 'customer.subscription.deleted':
-        await this.subscriptionsService.handleStripeSubscriptionEvent(
-          event.data.object as Stripe.Subscription,
+        this.logger.log(
+          `handling subscription created event for subscription ${event.data.object.id}`,
         );
-        break;
+        return await this.handleCustomerSubscriptionCreated(
+          event as Stripe.CustomerSubscriptionCreatedEvent,
+        );
+      case 'customer.subscription.updated':
+        this.logger.log(
+          `handling subscription updated event for subscription ${event.data.object.id}`,
+        );
+        return await this.handleCustomerSubscriptionUpdated(
+          event as Stripe.CustomerSubscriptionUpdatedEvent,
+        );
+      case 'customer.subscription.deleted':
+        this.logger.log(
+          `handling subscription deleted event for subscription ${event.data.object.id}`,
+        );
+        return await this.handleCustomerSubscriptionDeleted(
+          event as Stripe.CustomerSubscriptionDeletedEvent,
+        );
       default:
-        this.logger.debug(`Unhandled stripe event ${event.type}`);
+        return;
     }
+  }
+
+  private async handleCustomerSubscriptionCreated(
+    event: Stripe.CustomerSubscriptionCreatedEvent,
+  ): Promise<void> {
+    const subscription = event.data.object;
+    Logger.log(
+      `handling subscription created event for subscription ${subscription.id}`,
+    );
+    const userId = await this.stripeClient.getUserId(
+      event.data.object.metadata.user_id,
+      event.data.object.customer as string,
+    );
+
+    if (!userId) {
+      Logger.error(`User not found for subscription ${subscription.id}`);
+      return;
+    }
+
+    await this.stripeClient.createStripeSubscription(
+      userId,
+      event.data.object,
+      true,
+    );
+  }
+
+  private async handleCustomerSubscriptionUpdated(
+    event: Stripe.CustomerSubscriptionUpdatedEvent,
+  ): Promise<void> {
+    const subscription = event.data.object;
+    Logger.log(
+      `handling subscription updated event for subscription ${subscription.id}`,
+    );
+    const userId = await this.stripeClient.getUserId(
+      event.data.object.metadata.user_id,
+      event.data.object.customer as string,
+    );
+
+    if (!userId) {
+      Logger.error(`User not found for subscription ${subscription.id}`);
+      return;
+    }
+
+    await this.stripeClient.createStripeSubscription(
+      userId,
+      event.data.object,
+      false,
+    );
+  }
+
+  private async handleCustomerSubscriptionDeleted(
+    event: Stripe.CustomerSubscriptionDeletedEvent,
+  ): Promise<void> {
+    const subscription = event.data.object;
+    Logger.log(
+      `handling subscription deleted event for subscription ${subscription.id}`,
+    );
+
+    const userId = await this.stripeClient.getUserId(
+      event.data.object.metadata.user_id,
+      event.data.object.customer as string,
+    );
+
+    if (!userId) {
+      Logger.error(`User not found for subscription ${subscription.id}`);
+      return;
+    }
+
+    await this.stripeClient.cancelUserSubscription(userId);
   }
 }
