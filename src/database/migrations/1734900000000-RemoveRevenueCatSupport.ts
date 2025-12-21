@@ -6,27 +6,9 @@ export class RemoveRevenueCatSupport1734900000000
   name = 'RemoveRevenueCatSupport1734900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Drop revenuecat_events table indexes
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."IDX_revenuecat_events_created"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."IDX_revenuecat_events_type"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."IDX_revenuecat_events_transaction"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "public"."IDX_revenuecat_events_user"`,
-    );
-
-    // Drop foreign key constraint
-    await queryRunner.query(
-      `ALTER TABLE "revenuecat_events" DROP CONSTRAINT IF EXISTS "FK_revenuecat_events_user"`,
-    );
-
-    // Drop revenuecat_events table
-    await queryRunner.query(`DROP TABLE IF EXISTS "revenuecat_events"`);
+    // Drop revenuecat_events table (this will automatically drop all constraints and indexes)
+    // Using IF EXISTS to handle cases where the table doesn't exist
+    await queryRunner.query(`DROP TABLE IF EXISTS "revenuecat_events" CASCADE`);
 
     // Drop RevenueCat columns from subscription table
     await queryRunner.query(
