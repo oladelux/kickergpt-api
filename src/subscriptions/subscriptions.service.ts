@@ -154,6 +154,7 @@ export class SubscriptionsService {
     addonType: AddonType,
     user: User,
     isNativeUser: boolean,
+    token?: string,
   ): Promise<string> {
     const subscription = await this.getSubscriptionForUser(user.id);
     return this.handlePaystackAddonPurchase(
@@ -161,6 +162,7 @@ export class SubscriptionsService {
       subscription,
       user,
       isNativeUser,
+      token,
     );
   }
 
@@ -169,6 +171,7 @@ export class SubscriptionsService {
     plan: SubscriptionPlan,
     isNativeUser: boolean,
     countryCode?: string,
+    token?: string,
   ): Promise<string | null> {
     const subscription = await this.getSubscriptionForUser(userId);
     const paymentProvider = this.determinePaymentProvider(countryCode);
@@ -203,7 +206,12 @@ export class SubscriptionsService {
 
     // Route to appropriate payment provider
     if (paymentProvider === PaymentProvider.PAYSTACK) {
-      return this.handlePaystackPlanSelection(user, subscription, isNativeUser);
+      return this.handlePaystackPlanSelection(
+        user,
+        subscription,
+        isNativeUser,
+        token,
+      );
     } else {
       return this.handleStripePlanSelection(user, subscription, countryCode);
     }
@@ -257,6 +265,7 @@ export class SubscriptionsService {
     subscription: Subscription,
     user: User,
     isNativeUser: boolean,
+    token?: string,
   ): Promise<string> {
     // Ensure Paystack customer exists
     if (!subscription.paystackCustomerCode) {
@@ -270,6 +279,7 @@ export class SubscriptionsService {
       },
       'addon_purchase',
       isNativeUser,
+      token,
     );
     if (!transactionResponse.status) {
       throw new Error('Transaction initialization failed');
@@ -325,6 +335,7 @@ export class SubscriptionsService {
     user: User,
     subscription: Subscription,
     isNativeUser: boolean,
+    token?: string,
   ): Promise<string> {
     // Ensure Paystack customer exists
     if (!subscription.paystackCustomerCode) {
@@ -340,6 +351,7 @@ export class SubscriptionsService {
       },
       'plan_purchase',
       isNativeUser,
+      token,
     );
 
     if (!transactionResponse.status) {

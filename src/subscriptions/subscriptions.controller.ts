@@ -7,9 +7,12 @@ import {
   NotFoundException,
   Post,
   Request,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Subscription } from './domain/subscription';
 import { CheckoutResponseDto } from './dto/checkout-response.dto';
@@ -19,10 +22,11 @@ import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
 import { PromptUsageSummaryDto } from '../prompt-usage/dto/prompt-usage-summary.dto';
 import { UsersService } from '../users/users.service';
 import { AddonType } from '../prompt-usage/domain/addon-type.enum';
+import { JwtPayloadType } from '../auth/strategies/types/jwt-payload.type';
+import { AllConfigType } from '../config/config.type';
 
 @ApiTags('Subscriptions')
 @ApiBearerAuth()
-@UseGuards(AuthGuard('jwt'))
 @Controller({
   path: 'subscriptions',
   version: '1',
@@ -32,32 +36,40 @@ export class SubscriptionsController {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly promptUsageService: PromptUsageService,
     private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService<AllConfigType>,
   ) {}
 
   @Get('me')
+  @UseGuards(AuthGuard('jwt'))
   @ApiOkResponse({ type: Subscription })
   async getMySubscription(@Request() request): Promise<Subscription> {
     return this.subscriptionsService.getSubscriptionForUser(request.user.id);
   }
 
   @Post('select-plan')
+  @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({ type: CheckoutResponseDto })
   async selectPlan(
     @Request() request,
     @Body() dto: SelectPlanDto,
   ): Promise<CheckoutResponseDto> {
+    const authHeader = request.headers?.authorization;
+    const token = authHeader?.replace('Bearer ', '');
     const checkoutUrl = await this.subscriptionsService.handlePlanSelection(
       request.user.id,
       dto.plan,
       dto.isNativeUser ?? false,
       dto.countryCode,
+      token,
     );
 
     return { checkoutUrl };
   }
 
   @Get('usage')
+  @UseGuards(AuthGuard('jwt'))
   @ApiOkResponse({ type: PromptUsageSummaryDto })
   async getUsage(@Request() request): Promise<PromptUsageSummaryDto> {
     const subscription = await this.subscriptionsService.getSubscriptionForUser(
@@ -76,11 +88,24 @@ export class SubscriptionsController {
     type: Subscription,
   })
   async verify(
-    @Request() request,
-    @Body() data: { reference: string },
+    @Body() data: { reference: string; token: string },
   ): Promise<Subscription> {
-    const userId = request.user.id;
-    const user = await this.usersService.findById(userId);
+    let payload: JwtPayloadType;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayloadType>(data.token, {
+        secret: this.configService.getOrThrow('auth.secret', {
+          infer: true,
+        }),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    if (!payload.id) {
+      throw new UnauthorizedException('Invalid token payload');
+    }
+
+    const user = await this.usersService.findById(payload.id);
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -88,6 +113,7 @@ export class SubscriptionsController {
   }
 
   @Post('addon-purchase')
+  @UseGuards(AuthGuard('jwt'))
   @ApiOkResponse({
     type: Subscription,
   })
@@ -100,10 +126,13 @@ export class SubscriptionsController {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    const authHeader = request.headers?.authorization;
+    const token = authHeader?.replace('Bearer ', '');
     const checkoutUrl = await this.subscriptionsService.purchaseAddon(
       data.addonType,
       user,
       data.isNativeUser,
+      token,
     );
     return { checkoutUrl };
   }
@@ -113,14 +142,28 @@ export class SubscriptionsController {
     type: Subscription,
   })
   async addonPurchaseVerify(
-    @Request() request,
-    @Body() data: { reference: string },
+    @Body() data: { reference: string; token: string },
   ): Promise<Subscription> {
-    const userId = request.user.id;
-    const user = await this.usersService.findById(userId);
+    let payload: JwtPayloadType;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayloadType>(data.token, {
+        secret: this.configService.getOrThrow('auth.secret', {
+          infer: true,
+        }),
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    if (!payload.id) {
+      throw new UnauthorizedException('Invalid token payload');
+    }
+
+    const user = await this.usersService.findById(payload.id);
     if (!user) {
       throw new NotFoundException('User not found');
     }
+
     return this.subscriptionsService.verifyPaystackAddonPurchase(
       data.reference,
       user,
@@ -128,6 +171,7 @@ export class SubscriptionsController {
   }
 
   @Post('cancel')
+  @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
   @ApiOkResponse({ type: Subscription })
   async cancel(@Request() request): Promise<Subscription> {

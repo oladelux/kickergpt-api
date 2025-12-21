@@ -40,17 +40,18 @@ export class PaystackClientService {
     data: InitializeTransaction,
     transactionType: 'addon_purchase' | 'plan_purchase',
     isNativeUser: boolean,
+    token?: string,
   ): Promise<TransactionInitialized | BadRequest> {
     if (transactionType === 'addon_purchase') {
-      data.callback_url = this.buildUrl(
-        isNativeUser
-          ? '/verify-addon-purchase?isNative=true'
-          : '/verify-addon-purchase',
-      );
+      const buildUrl = isNativeUser
+        ? `/verify-addon-purchase?isNative=true${token ? `&token=${token}` : ''}`
+        : `/verify-addon-purchase?token=${token}`;
+      data.callback_url = this.buildUrl(buildUrl);
     } else if (transactionType === 'plan_purchase') {
-      data.callback_url = this.buildUrl(
-        isNativeUser ? '/verify-payment?isNative=true' : '/verify-payment',
-      );
+      const buildUrl = isNativeUser
+        ? `/verify-payment?isNative=true${token ? `&token=${token}` : ''}`
+        : `/verify-payment?token=${token}`;
+      data.callback_url = this.buildUrl(buildUrl);
     }
     return this.paystack.transaction.initialize(data);
   }
