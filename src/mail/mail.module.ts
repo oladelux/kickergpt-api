@@ -8,11 +8,13 @@ import { ExhaustedUsersEmailScheduler } from './schedulers/exhausted-users-email
 import { UserEntity } from '../users/infrastructure/persistence/relational/entities/user.entity';
 import { SubscriptionEntity } from '../subscriptions/infrastructure/persistence/relational/entities/subscription.entity';
 import { PromptUsageEntity } from '../prompt-usage/infrastructure/persistence/relational/entities/prompt-usage.entity';
+import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
 
 @Module({
   imports: [
     ConfigModule,
     MailerModule,
+    PromptUsageModule,
     TypeOrmModule.forFeature([
       UserEntity,
       SubscriptionEntity,

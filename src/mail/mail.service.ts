@@ -394,6 +394,77 @@ export class MailService {
     });
   }
 
+  async sendMilestoneCelebrationEmail(params: {
+    to: string;
+    name?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'milestone-celebration.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      'We have some exciting news to share with you!',
+      '',
+      '🎉 2000+ Users!',
+      "Over the weekend, we hit an incredible milestone - 2000+ users are now using KickerGPT! This wouldn't have been possible without amazing users like you.",
+      '',
+      '🎁 5 Free Prompts - On Us!',
+      "To celebrate this milestone, we're giving 5 free prompts to every user. They've already been added to your account - no action needed! Just log in and start using them.",
+      '',
+      '📱 Google Play Store Launch',
+      "We're thrilled to announce that KickerGPT is now available on the Google Play Store! Download the app and take your match analysis on the go.",
+      '',
+      '🎁 Surprise for Early Downloaders',
+      "Be among the first 20 people to download from the Google Play Store and get a special surprise! Don't wait - download now and see what's waiting for you.",
+      '',
+      'Follow us on X (Twitter) for more updates: @kickergpt',
+      'https://twitter.com/kickergpt',
+      '',
+      'Thanks for being part of the KickerGPT community!',
+      '',
+      'The KickerGPT Team',
+      '',
+      "You're receiving this email because you requested access to KickerGPT.",
+      "Need help? Reply to this email and we'll get back ASAP.",
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: '🎉 Celebrating 2000+ Users - Your 5 Free Prompts Are Here!',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   async sendExhaustedPromptsEmail(params: {
     to: string;
     name?: string;
