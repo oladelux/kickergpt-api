@@ -21,6 +21,7 @@ import { StripeClientService } from '../stripe/stripe-client.service';
 import { PaystackClientService } from '../paystack/paystack-client.service';
 import { AddonType } from '../prompt-usage/domain/addon-type.enum';
 import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
+import { MailService } from '../mail/mail.service';
 
 @Injectable()
 export class SubscriptionsService {
@@ -34,6 +35,7 @@ export class SubscriptionsService {
     private readonly paystackClient: PaystackClientService,
     private readonly promptUsageService: PromptUsageService,
     private readonly configService: ConfigService<AllConfigType>,
+    private readonly mailService: MailService,
   ) {}
 
   async getActiveSubscriptionByStripeCustomerId(
@@ -639,6 +641,28 @@ export class SubscriptionsService {
               : null,
         },
       );
+
+    // Send PRO welcome email if subscription is now PRO and ACTIVE
+    if (
+      updatedSubscription.plan === SubscriptionPlan.PRO &&
+      updatedSubscription.status === SubscriptionStatus.ACTIVE &&
+      user.email
+    ) {
+      try {
+        const userName =
+          user.firstName?.trim() || user.lastName?.trim() || 'there';
+        await this.mailService.sendProWelcomeEmail({
+          to: user.email,
+          name: userName,
+        });
+        this.logger.log(`PRO welcome email sent to ${user.email}`);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to send PRO welcome email to ${user.email}: ${error}`,
+        );
+        // Don't throw - email failure shouldn't break subscription flow
+      }
+    }
 
     return updatedSubscription;
   }

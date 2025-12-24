@@ -538,6 +538,174 @@ export class MailService {
     });
   }
 
+  async sendPredictionsFeatureEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'predictions-feature-announcement.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      "We're excited to introduce a brand new feature that takes match analysis to the next level!",
+      '',
+      '🎯 Daily Match Predictions',
+      'Get high-confidence match outcome predictions powered by advanced algorithms analyzing bookmaker odds, team form, head-to-head history, injuries, news sentiment, and more.',
+      '',
+      '✨ How It Works',
+      'Our AI analyzes multiple factors for each match:',
+      '- Bookmaker odds and implied probabilities',
+      '- Recent team form and momentum',
+      '- Head-to-head historical performance',
+      '- Key player injuries and availability',
+      '- News sentiment and team morale',
+      '- Home advantage factors',
+      '',
+      'Only matches with 90%+ confidence are included in predictions.',
+      '',
+      '📊 Free vs PRO Access',
+      'Free users: Get up to 5 high-confidence predictions per day',
+      'PRO users: Get all predictions with unlimited access',
+      '',
+      '⚡ Updated Daily',
+      "Predictions are generated fresh every day at midnight, so you always have the latest insights for today's matches.",
+      '',
+      `View Predictions: ${appUrl}`,
+      '',
+      'Thanks for being part of the KickerGPT community!',
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: '🎯 New Feature: Daily Match Predictions Now Available',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
+  async sendProWelcomeEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'pro-welcome.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      'Welcome to KickerGPT PRO! 🎉',
+      '',
+      "Thank you for upgrading. You now have access to the full power of KickerGPT. Here's what you can do:",
+      '',
+      '⭐ PRO Benefits',
+      '',
+      '🎯 Unlimited Predictions',
+      'Get access to all high-confidence match predictions - no limits! While free users see 5 predictions, you get everything.',
+      '',
+      '💬 100 Prompts Per Month',
+      'Ask unlimited questions about matches, teams, players, and more. Get deep insights with 10x more prompts than the free plan.',
+      '',
+      '🚀 Exclusive Features',
+      'Access to all premium features and priority support. More exclusive features coming soon!',
+      '',
+      '💡 Getting Started',
+      '1. Check Your Predictions',
+      "Visit the Predictions section to see today's high-confidence match predictions.",
+      '',
+      '2. Ask Deep Questions',
+      'Use your 100 monthly prompts to dive deep into match analysis, team strategies, and player insights.',
+      '',
+      '3. Explore All Features',
+      'Take advantage of extended match access, detailed analysis, and all PRO-exclusive features.',
+      '',
+      `Open KickerGPT: ${appUrl}`,
+      '',
+      "If you have any questions or need help, just reply to this email. We're here to help!",
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: 'Welcome to KickerGPT PRO! 🎉',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
