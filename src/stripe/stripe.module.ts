@@ -4,12 +4,15 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 import { RelationalSubscriptionPersistenceModule } from '../subscriptions/infrastructure/persistence/relational/relational-persistence.module';
 import { UsersModule } from '../users/users.module';
 import { ConfigModule } from '@nestjs/config';
+import { MailModule } from '../mail/mail.module';
+
 @Module({
   imports: [
     RelationalSubscriptionPersistenceModule,
     forwardRef(() => SubscriptionsModule),
     UsersModule,
     ConfigModule,
+    MailModule,
   ],
   providers: [StripeClientService],
   exports: [StripeClientService],

@@ -8,6 +8,7 @@ import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
     forwardRef(() => StripeModule),
     PaystackModule,
     PromptUsageModule,
+    MailModule,
     JwtModule.register({}),
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
