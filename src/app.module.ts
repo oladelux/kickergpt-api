@@ -33,6 +33,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { PromptUsageModule } from './prompt-usage/prompt-usage.module';
 import { AdminModule } from './admin/admin.module';
 import { AdsModule } from './ads/ads.module';
+import { PredictionsModule } from './predictions/predictions.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -100,6 +101,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     PromptUsageModule,
     AdminModule,
     AdsModule,
+    PredictionsModule,
   ],
 })
 export class AppModule {}
