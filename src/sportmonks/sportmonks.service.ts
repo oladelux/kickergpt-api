@@ -856,60 +856,6 @@ export class SportmonksService {
     });
   }
 
-  async getCachedFixturesForDate(
-    date: string,
-  ): Promise<KickerGPTFixturesResponse[]> {
-    const idsKey = this.buildFixturesIdsCacheKey(date);
-    const idsJson = await this.redisService.get<string>(idsKey);
-
-    if (!idsJson) {
-      return [];
-    }
-
-    let fixtureIds: number[];
-    try {
-      fixtureIds =
-        typeof idsJson === 'object'
-          ? (idsJson as unknown as number[])
-          : JSON.parse(idsJson);
-    } catch {
-      this.logger.warn(`Failed to parse fixture IDs for date ${date}`);
-      return [];
-    }
-
-    if (fixtureIds.length === 0) {
-      return [];
-    }
-
-    const fixtures: KickerGPTFixturesResponse[] = [];
-
-    // Fetch all fixtures using pipeline
-    const pipeline = this.redisService.pipeline();
-    for (const id of fixtureIds) {
-      pipeline?.get(this.buildSingleFixtureCacheKey(id));
-    }
-
-    const results = await pipeline?.exec();
-
-    if (results) {
-      for (const result of results) {
-        if (result) {
-          try {
-            const fixture =
-              typeof result === 'object'
-                ? (result as unknown as KickerGPTFixturesResponse)
-                : (JSON.parse(result as string) as KickerGPTFixturesResponse);
-            fixtures.push(fixture);
-          } catch {
-            // Skip invalid entries
-          }
-        }
-      }
-    }
-
-    return fixtures;
-  }
-
   async getSelectedControlRoomMatches(
     fixtureId: number,
     date: string,
