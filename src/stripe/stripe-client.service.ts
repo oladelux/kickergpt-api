@@ -9,9 +9,12 @@ import { PaymentProvider } from '../subscriptions/domain/payment-provider.enum';
 import { SubscriptionPlan } from '../subscriptions/domain/subscription-plan.enum';
 import { Subscription } from '../subscriptions/domain/subscription';
 import { SubscriptionRepository } from '../subscriptions/infrastructure/persistence/subscription.repository';
+import { MailService } from '../mail/mail.service';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class StripeClientService {
+  private readonly logger = new Logger(StripeClientService.name);
   private readonly client: Stripe;
 
   constructor(
@@ -20,6 +23,7 @@ export class StripeClientService {
     private readonly subscriptionsService: SubscriptionsService,
     private readonly usersService: UsersService,
     private readonly subscriptionRepository: SubscriptionRepository,
+    private readonly mailService: MailService,
   ) {
     this.client = new Stripe(
       this.configService.getOrThrow('stripe.secret', { infer: true }),
@@ -148,6 +152,28 @@ export class StripeClientService {
       };
 
       await this.subscriptionsService.updateUserSubscription(userId, payload);
+
+      // Send PRO welcome email if subscription is now PRO and ACTIVE
+      if (
+        payload.plan === SubscriptionPlan.PRO &&
+        payload.status === SubscriptionStatus.ACTIVE &&
+        user.email
+      ) {
+        try {
+          const userName =
+            user.firstName?.trim() || user.lastName?.trim() || 'there';
+          await this.mailService.sendProWelcomeEmail({
+            to: user.email,
+            name: userName,
+          });
+          this.logger.log(`PRO welcome email sent to ${user.email}`);
+        } catch (error) {
+          this.logger.warn(
+            `Failed to send PRO welcome email to ${user.email}: ${error}`,
+          );
+          // Don't throw - email failure shouldn't break subscription flow
+        }
+      }
     }
   }
 }
