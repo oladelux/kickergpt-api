@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { MailService } from '../mail.service';
 import { UserEntity } from '../../users/infrastructure/persistence/relational/entities/user.entity';
-import { PromptUsageService } from '../../prompt-usage/prompt-usage.service';
 
 @Injectable()
 export class BulkUserEmailScheduler {
@@ -12,22 +11,25 @@ export class BulkUserEmailScheduler {
   private readonly batchSize = 100;
   private readonly delayPerEmailMs = 600; // avoid rate limits
   private readonly delayBetweenBatchesMs = 1000;
-  private readonly freePromptsToGrant = 5;
 
   constructor(
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
     private readonly mailService: MailService,
-    private readonly promptUsageService: PromptUsageService,
   ) {}
 
   @Cron('00 07 * * *')
-  async sendBulkUserEmail(): Promise<void> {
-    this.logger.log('Starting milestone celebration bulk email job...');
+  /**
+   * Send predictions feature announcement email to all users.
+   * Can be triggered manually or via cron.
+   */
+  async sendPredictionsAnnouncementEmail(): Promise<void> {
+    this.logger.log(
+      'Starting predictions feature announcement bulk email job...',
+    );
     let offset = 0;
     let totalSent = 0;
     let totalFailed = 0;
-    let totalCreditsGranted = 0;
 
     while (true) {
       const users = await this.usersRepository.find({
@@ -57,15 +59,8 @@ export class BulkUserEmailScheduler {
         const name = user.firstName?.trim() || user.lastName?.trim() || 'there';
 
         try {
-          // Grant 5 free prompts to the user
-          await this.promptUsageService.addAddonCredits(
-            user.id,
-            this.freePromptsToGrant,
-          );
-          totalCreditsGranted += 1;
-
-          // Send milestone celebration email
-          await this.mailService.sendMilestoneCelebrationEmail({
+          // Send predictions feature announcement email
+          await this.mailService.sendPredictionsFeatureEmail({
             to: user.email as string,
             name,
           });
@@ -92,7 +87,7 @@ export class BulkUserEmailScheduler {
     }
 
     this.logger.log(
-      `Milestone celebration email job completed. Credits granted: ${totalCreditsGranted}, Emails sent: ${totalSent}, Failed: ${totalFailed}`,
+      `Predictions announcement email job completed. Emails sent: ${totalSent}, Failed: ${totalFailed}`,
     );
   }
 
