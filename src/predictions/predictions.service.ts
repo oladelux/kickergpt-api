@@ -13,6 +13,8 @@ import {
   buildPredictionsCacheKey,
   PREDICTIONS_CACHE_TTL_SECONDS,
   VERY_HIGH_CONFIDENCE_THRESHOLD,
+  HIGH_CONFIDENCE_THRESHOLD,
+  MEDIUM_CONFIDENCE_THRESHOLD,
   ConfidenceLevel,
   MatchResult,
 } from './types/prediction.types';
@@ -202,7 +204,7 @@ export class PredictionsService {
   }
 
   /**
-   * Analyze a single fixture and return a prediction if confidence >= 90%.
+   * Analyze a single fixture and return a prediction with appropriate confidence level.
    */
   private analyzeFixture(
     fixture: KickerGPTFixturesResponse,
@@ -217,8 +219,17 @@ export class PredictionsService {
         ? calculation.homeProbability
         : calculation.awayProbability;
 
-    const confidence: ConfidenceLevel =
-      probability >= VERY_HIGH_CONFIDENCE_THRESHOLD ? 'very_high' : 'high';
+    // Assign confidence level based on probability ranges
+    let confidence: ConfidenceLevel;
+    if (probability >= VERY_HIGH_CONFIDENCE_THRESHOLD) {
+      confidence = 'very high';
+    } else if (probability >= HIGH_CONFIDENCE_THRESHOLD) {
+      confidence = 'high';
+    } else if (probability >= MEDIUM_CONFIDENCE_THRESHOLD) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
 
     return {
       fixtureId: fixture.id,

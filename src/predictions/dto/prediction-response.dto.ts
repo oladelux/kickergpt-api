@@ -25,7 +25,8 @@ class PredictionLeagueDto {
 class PredictionDto {
   @ApiProperty({
     example: 'result',
-    description: 'Type of prediction. Currently supports "result" for match outcome.',
+    description:
+      'Type of prediction. Currently supports "result" for match outcome.',
   })
   type: 'result';
 
@@ -44,10 +45,11 @@ class PredictionDto {
 
   @ApiProperty({
     example: 'high',
-    enum: ['high', 'very_high'],
-    description: 'Confidence level: high (90-95%), very_high (95%+)',
+    enum: ['very_high', 'high', 'medium', 'low'],
+    description:
+      'Confidence level: very_high (>=90%), high (>=70% and <90%), medium (>=50% and <70%), low (<50%)',
   })
-  confidence: 'high' | 'very_high';
+  confidence: 'very high' | 'high' | 'medium' | 'low';
 }
 
 export class FixturePredictionDto {
@@ -98,4 +100,3 @@ export class TodayPredictionsResponseDto {
   })
   generatedAt: string;
 }
-
