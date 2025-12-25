@@ -22,7 +22,7 @@ export class PredictionsScheduler {
    * Cron: minute hour day-of-month month day-of-week
    * "0 0 * * *" = At 00:00 every day
    */
-  @Cron('0 0 * * *')
+  @Cron('35 0 * * *')
   async generateDailyPredictions(): Promise<void> {
     // Skip in development mode to avoid unnecessary processing
     if (

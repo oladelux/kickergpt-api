@@ -12,10 +12,12 @@ export type PredictionType = 'result';
 
 /**
  * Confidence level based on probability percentage.
- * - high: 90-95% probability
- * - very_high: 95%+ probability
+ * - very_high: >= 90% probability
+ * - high: >= 70% and < 90% probability
+ * - medium: >= 50% and < 70% probability
+ * - low: < 50% probability
  */
-export type ConfidenceLevel = 'high' | 'very_high';
+export type ConfidenceLevel = 'very high' | 'high' | 'medium' | 'low';
 
 /**
  * The predicted match result.
@@ -128,6 +130,16 @@ export const PREDICTIONS_CACHE_TTL_SECONDS = 25 * 60 * 60;
 export const MIN_PREDICTION_PROBABILITY = 90;
 
 /**
- * Threshold for "very_high" confidence level (95%).
+ * Threshold for "very_high" confidence level (90%).
  */
-export const VERY_HIGH_CONFIDENCE_THRESHOLD = 95;
+export const VERY_HIGH_CONFIDENCE_THRESHOLD = 90;
+
+/**
+ * Threshold for "high" confidence level (70%).
+ */
+export const HIGH_CONFIDENCE_THRESHOLD = 70;
+
+/**
+ * Threshold for "medium" confidence level (50%).
+ */
+export const MEDIUM_CONFIDENCE_THRESHOLD = 50;
