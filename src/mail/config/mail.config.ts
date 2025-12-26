@@ -48,6 +48,15 @@ class EnvironmentVariablesValidator {
   @IsBoolean()
   @IsOptional()
   MAIL_ENABLED: boolean;
+
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  MAIL_RATE_LIMIT_PER_SECOND: number;
+
+  @IsBoolean()
+  @IsOptional()
+  MAIL_RATE_LIMIT_ENABLED: boolean;
 }
 
 export default registerAs<MailConfig>('mail', () => {
@@ -66,6 +75,13 @@ export default registerAs<MailConfig>('mail', () => {
     enabled:
       process.env.MAIL_ENABLED !== undefined
         ? process.env.MAIL_ENABLED === 'true'
+        : true,
+    rateLimitPerSecond: process.env.MAIL_RATE_LIMIT_PER_SECOND
+      ? parseInt(process.env.MAIL_RATE_LIMIT_PER_SECOND, 10)
+      : 2,
+    rateLimitEnabled:
+      process.env.MAIL_RATE_LIMIT_ENABLED !== undefined
+        ? process.env.MAIL_RATE_LIMIT_ENABLED === 'true'
         : true,
   };
 });
