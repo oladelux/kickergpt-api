@@ -14,8 +14,11 @@ import { StatusEnum } from '../../statuses/statuses.enum';
 export class ExhaustedUsersEmailScheduler {
   private readonly logger = new Logger(ExhaustedUsersEmailScheduler.name);
   private readonly batchSize = 100;
-  private readonly delayPerEmailMs = 600; // avoid rate limits
-  private readonly delayBetweenBatchesMs = 1000;
+  // Rate limiting is now handled centrally in MailerService
+  // No delay needed per email - rate limiter handles it
+  private readonly delayPerEmailMs = 0;
+  // Small delay between batches to avoid overwhelming database
+  private readonly delayBetweenBatchesMs = 200;
 
   constructor(
     @InjectRepository(UserEntity)

@@ -9,4 +9,6 @@ export type MailConfig = {
   secure: boolean;
   requireTLS: boolean;
   enabled: boolean;
+  rateLimitPerSecond: number;
+  rateLimitEnabled: boolean;
 };

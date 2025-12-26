@@ -9,8 +9,11 @@ import { UserEntity } from '../../users/infrastructure/persistence/relational/en
 export class BulkUserEmailScheduler {
   private readonly logger = new Logger(BulkUserEmailScheduler.name);
   private readonly batchSize = 100;
-  private readonly delayPerEmailMs = 600; // avoid rate limits
-  private readonly delayBetweenBatchesMs = 1000;
+  // Rate limiting is now handled centrally in MailerService
+  // No delay needed per email - rate limiter handles it
+  private readonly delayPerEmailMs = 0;
+  // Small delay between batches to avoid overwhelming database
+  private readonly delayBetweenBatchesMs = 200;
 
   constructor(
     @InjectRepository(UserEntity)
@@ -24,6 +27,7 @@ export class BulkUserEmailScheduler {
    * Can be triggered manually or via cron.
    */
   async sendPredictionsAnnouncementEmail(): Promise<void> {
+    return;
     this.logger.log(
       'Starting predictions feature announcement bulk email job...',
     );
