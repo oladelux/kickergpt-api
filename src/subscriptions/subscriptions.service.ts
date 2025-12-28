@@ -48,6 +48,29 @@ export class SubscriptionsService {
     userId: string,
     payload: Partial<Omit<Subscription, 'id'>>,
   ): Promise<Subscription> {
+    // Check if upgrading from FREE to PRO
+    if (payload.plan === SubscriptionPlan.PRO) {
+      const existingSubscription =
+        await this.subscriptionRepository.findByUserId(userId);
+
+      // If user was on FREE plan and is now upgrading to PRO, reset their promptsUsed
+      if (
+        existingSubscription?.plan === SubscriptionPlan.FREE &&
+        payload.status === SubscriptionStatus.ACTIVE
+      ) {
+        try {
+          await this.promptUsageService.resetPromptsUsed(userId);
+          this.logger.log(
+            `Reset promptsUsed for user ${userId} on PRO upgrade`,
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Failed to reset promptsUsed for user ${userId}: ${error}`,
+          );
+          // Don't throw - prompt reset failure shouldn't break subscription flow
+        }
+      }
+    }
     return this.subscriptionRepository.updateByUserId(userId, payload);
   }
 
@@ -617,6 +640,8 @@ export class SubscriptionsService {
     }
 
     const isActive = existingSubscription.status === SubscriptionStatus.ACTIVE;
+    const isUpgradingToPro =
+      existingSubscription.plan === SubscriptionPlan.FREE && isActive;
 
     const updatedSubscription =
       await this.subscriptionRepository.updatePlanAndStatus(
@@ -641,6 +666,21 @@ export class SubscriptionsService {
               : null,
         },
       );
+
+    // Reset promptsUsed if upgrading from FREE to PRO
+    if (isUpgradingToPro && updatedSubscription.plan === SubscriptionPlan.PRO) {
+      try {
+        await this.promptUsageService.resetPromptsUsed(user.id);
+        this.logger.log(
+          `Reset promptsUsed for user ${user.id} on PRO upgrade via Paystack`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to reset promptsUsed for user ${user.id}: ${error}`,
+        );
+        // Don't throw - prompt reset failure shouldn't break subscription flow
+      }
+    }
 
     // Send PRO welcome email if subscription is now PRO and ACTIVE
     if (
