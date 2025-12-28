@@ -203,4 +203,11 @@ export class PromptUsageService {
   async deleteByUserId(userId: string): Promise<void> {
     await this.repository.deleteByUserId(userId);
   }
+
+  async resetPromptsUsed(userId: string): Promise<PromptUsage> {
+    const usage = await this.getUsage(userId);
+    return this.repository.update(usage.id, {
+      promptsUsed: 0,
+    });
+  }
 }
