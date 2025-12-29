@@ -458,8 +458,8 @@ export class PredictionsService {
       return 0.5; // Neutral
     }
 
-    // Take last 5 matches
-    const recentMatches = matches.slice(-5);
+    // Take first 5 matches (data is sorted most recent first)
+    const recentMatches = matches.slice(0, 5);
 
     let points = 0;
     let matchesAnalyzed = 0;

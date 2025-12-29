@@ -621,6 +621,104 @@ export class MailService {
     });
   }
 
+  async sendStrategiesFeatureEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'strategies-feature-announcement.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      "We're thrilled to announce a game-changing feature that will revolutionize how you find and analyze football matches! 🚀",
+      '',
+      '🎯 Introducing Strategies: Your Personal Match-Finding Assistant',
+      '',
+      'Are you tired of manually sifting through hundreds of fixtures to find matches that meet your specific criteria? Strategies lets you build custom filters that automatically identify matches based on team performance, form, injuries, and historical data!',
+      '',
+      '✨ What Makes Strategies Powerful?',
+      'Create intelligent filters using a combination of conditions:',
+      '- Team Form: Analyze home/away performance patterns',
+      '- Goals Patterns: Find high-scoring or defensive matches',
+      '- Head-to-Head: Historical matchup analysis',
+      '- Injuries: Factor in player availability',
+      '- BTTS & Clean Sheets: Predict scoring patterns',
+      '- Win Rates: Target consistent performers',
+      '',
+      '🎨 How It Works',
+      '1. Create Your Strategy - Name it and define your criteria',
+      '2. Add Conditions - Combine up to 10 different metrics',
+      '3. Find Matches - Boot Room Bot scans all fixtures instantly',
+      '4. Get Results - See only matches that meet ALL your criteria',
+      '',
+      '💡 Example Strategies You Can Create',
+      '🏠 "Best Home Team" - Strong home form vs weak away teams',
+      '⚽ "Over 1.5 Goals" - Consistent goal-scoring from both teams',
+      '🛡️ "Defensive Battle" - Low-scoring, tight matches',
+      '🔥 "Form Reversal" - Home advantage with contrasting momentum',
+      '',
+      '👑 PRO Feature',
+      'Strategies is exclusively available to PRO users. Upgrade to unlock unlimited custom strategies with advanced filtering capabilities.',
+      '',
+      '📖 Want to Learn More?',
+      'Check out our comprehensive guide:',
+      'https://help.kickergpt.com/en/articles/13248747-introducing-strategies-your-personal-match-finding-assistant',
+      '',
+      '🚀 Ready to Create Your First Strategy?',
+      `Visit: ${appUrl}/strategies`,
+      '',
+      "Whether you're looking for high-scoring home favorites, BTTS opportunities, or defensive masterclasses, Strategies gives you the power to filter through the noise and focus on what matters most to you.",
+      '',
+      'Happy strategizing! ⚽🎯',
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject:
+        '🎯 Introducing Strategies: Your Personal Match-Finding Assistant',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   async sendProWelcomeEmail(params: {
     to: string;
     name?: string;
@@ -700,6 +798,93 @@ export class MailService {
       },
       context: {
         name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
+  async sendStrategyMatchesEmail(params: {
+    to: string;
+    name?: string;
+    strategyName: string;
+    matches: Array<{
+      homeTeam: string;
+      awayTeam: string;
+      league: string;
+      date: string;
+      time: string;
+      venue?: string;
+    }>;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const matchCount = params.matches.length;
+    const matchText = matchCount === 1 ? 'match' : 'matches';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'strategy-matches.hbs',
+    );
+
+    const matchesList = params.matches
+      .map(
+        (m) =>
+          `${m.homeTeam} vs ${m.awayTeam} - ${m.league} (${m.date} at ${m.time})${m.venue ? ` at ${m.venue}` : ''}`,
+      )
+      .join('\n');
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      `Your strategy "${params.strategyName}" has found ${matchCount} matching ${matchText} for today!`,
+      '',
+      "Today's Matches:",
+      matchesList,
+      '',
+      `View full analysis: ${appUrl}`,
+      '',
+      'Good luck with your matches today!',
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: `🎯 ${matchCount} ${matchText} found for "${params.strategyName}" - KickerGPT`,
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        strategyName: params.strategyName,
+        matchCount,
+        matchText,
+        matches: params.matches,
         appUrl,
         unsubscribeUrl,
       },
