@@ -23,7 +23,7 @@ export class StrategiesAnnouncementEmailScheduler {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('18 04 * * *')
+  @Cron('00 07 * * *')
   /**
    * Send strategies feature announcement email to all users at 7am daily.
    * Can be triggered manually or via cron.
