@@ -584,29 +584,36 @@ export class SportmonksService {
           const venueResponse = venue ? this.buildVenueResponse(venue) : null;
           const isDerby = this.isDerbyMatch(homeTeam, awayTeam);
           const matchOdds = this.buildMatchOdds(odds, apiFixture.id);
-          const h2h: KickerGPTMatchSummary[] = await Promise.all(
-            (h2hResults ?? []).map(async (result) => ({
-              id: result.id,
-              date: result.starting_at,
-              timestamp: result.starting_at_timestamp,
-              league: this.buildLeagueResponse(result.league, result.season),
-              teams: this.buildTeamsResponse(result.participants),
-              venue: result.venue
-                ? this.buildVenueResponse(result.venue)
-                : null,
-              status: null,
-              goals: this.buildScoresResponse(result.scores),
-              derby: this.isDerbyMatch(homeTeam, awayTeam),
-              weatherSummary: await this.resolveWeatherSummary(
-                result.weatherreport,
-                result,
-              ),
-              referee:
-                result.referees.length > 0
-                  ? (result.referees[0].referee.display_name ?? 'unknown')
-                  : 'unknown',
-            })),
-          );
+          const h2h: KickerGPTMatchSummary[] = (
+            await Promise.all(
+              (h2hResults ?? []).map(async (result) => ({
+                id: result.id,
+                date: result.starting_at,
+                timestamp: result.starting_at_timestamp,
+                league: this.buildLeagueResponse(result.league, result.season),
+                teams: this.buildTeamsResponse(result.participants),
+                venue: result.venue
+                  ? this.buildVenueResponse(result.venue)
+                  : null,
+                status: null,
+                goals: this.buildScoresResponse(result.scores),
+                derby: this.isDerbyMatch(homeTeam, awayTeam),
+                weatherSummary: await this.resolveWeatherSummary(
+                  result.weatherreport,
+                  result,
+                ),
+                referee:
+                  result.referees.length > 0
+                    ? (result.referees[0].referee.display_name ?? 'unknown')
+                    : 'unknown',
+              })),
+            )
+          ).sort((a, b) => {
+            // Sort by timestamp descending (most recent first)
+            const timestampA = a.timestamp ?? new Date(a.date).getTime() / 1000;
+            const timestampB = b.timestamp ?? new Date(b.date).getTime() / 1000;
+            return timestampB - timestampA;
+          });
 
           const homeInjuries: KickerGPTInjuryPlayerFlag[] =
             homeInjuryResults.map((result) => {
@@ -1422,7 +1429,7 @@ export class SportmonksService {
   ): Promise<KickerGPTMatchSummary[]> {
     const ctx = context ?? 'summaries';
     this.logger.log(`[${ctx}] start for ${fixtures.length} matches`);
-    return Promise.all(
+    const summaries = await Promise.all(
       fixtures.map(async (result) => {
         const {
           participants,
@@ -1475,6 +1482,13 @@ export class SportmonksService {
         };
       }),
     );
+
+    // Sort by timestamp descending (most recent first)
+    return summaries.sort((a, b) => {
+      const timestampA = a.timestamp ?? new Date(a.date).getTime() / 1000;
+      const timestampB = b.timestamp ?? new Date(b.date).getTime() / 1000;
+      return timestampB - timestampA;
+    });
   }
 
   private extractPlayerRatings(
