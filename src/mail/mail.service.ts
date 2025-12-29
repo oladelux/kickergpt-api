@@ -706,6 +706,93 @@ export class MailService {
     });
   }
 
+  async sendStrategyMatchesEmail(params: {
+    to: string;
+    name?: string;
+    strategyName: string;
+    matches: Array<{
+      homeTeam: string;
+      awayTeam: string;
+      league: string;
+      date: string;
+      time: string;
+      venue?: string;
+    }>;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const matchCount = params.matches.length;
+    const matchText = matchCount === 1 ? 'match' : 'matches';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'strategy-matches.hbs',
+    );
+
+    const matchesList = params.matches
+      .map(
+        (m) =>
+          `${m.homeTeam} vs ${m.awayTeam} - ${m.league} (${m.date} at ${m.time})${m.venue ? ` at ${m.venue}` : ''}`,
+      )
+      .join('\n');
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      `Your strategy "${params.strategyName}" has found ${matchCount} matching ${matchText} for today!`,
+      '',
+      "Today's Matches:",
+      matchesList,
+      '',
+      `View full analysis: ${appUrl}`,
+      '',
+      'Good luck with your matches today!',
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: `🎯 ${matchCount} ${matchText} found for "${params.strategyName}" - KickerGPT`,
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        strategyName: params.strategyName,
+        matchCount,
+        matchText,
+        matches: params.matches,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
