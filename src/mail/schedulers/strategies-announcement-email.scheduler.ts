@@ -30,6 +30,7 @@ export class StrategiesAnnouncementEmailScheduler {
    * NOTE: This is currently disabled. Remove the return statement to enable.
    */
   async sendStrategiesAnnouncementEmail(): Promise<void> {
+    return;
     this.logger.log(
       'Starting strategies feature announcement bulk email job...',
     );
