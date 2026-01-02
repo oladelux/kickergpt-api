@@ -891,6 +891,79 @@ export class MailService {
     });
   }
 
+  async sendPasswordResetSuccessEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'password-reset-success.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      'Great news! Your password has been successfully reset.',
+      '',
+      '✅ Password Reset Successful',
+      'Your KickerGPT account password was changed successfully. All active sessions have been logged out for security purposes.',
+      '',
+      '🔒 Security Information',
+      '- All active sessions have been terminated',
+      "- You'll need to sign in again with your new password",
+      "- If you didn't make this change, please contact us immediately",
+      '',
+      "💡 What's Next?",
+      "You can now sign in to your account using your new password. Make sure to keep your password secure and don't share it with anyone.",
+      '',
+      `Sign in: ${appUrl}/sign-in`,
+      '',
+      "If you didn't request this password reset, please contact our support team immediately.",
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: '✅ Password Reset Successful - KickerGPT',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   private isMailEnabled(): boolean {
     return this.configService.get('mail.enabled', { infer: true }) ?? true;
   }
