@@ -443,6 +443,15 @@ export class AuthService {
     await this.usersService.update(user.id, {
       password,
     });
+
+    // Send password reset success email
+    if (user.email) {
+      const name = user.firstName?.trim() || user.lastName?.trim() || undefined;
+      await this.mailService.sendPasswordResetSuccessEmail({
+        to: user.email,
+        name,
+      });
+    }
   }
 
   async me(userJwtPayload: JwtPayloadType): Promise<NullableType<User>> {
