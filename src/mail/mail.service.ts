@@ -15,7 +15,9 @@ export class MailService {
     private readonly configService: ConfigService<AllConfigType>,
   ) {}
 
-  async userSignUp(mailData: MailData<{ hash: string }>): Promise<void> {
+  async userSignUp(
+    mailData: MailData<{ hash: string; countryCode?: string | null }>,
+  ): Promise<void> {
     if (!this.isMailEnabled()) {
       return;
     }
@@ -41,6 +43,16 @@ export class MailService {
     );
     url.searchParams.set('hash', mailData.data.hash);
 
+    const appUrl = this.configService.getOrThrow('app.frontendDomain', {
+      infer: true,
+    });
+    const unsubscribeUrl = `${appUrl}/unsubscribe`;
+
+    // Check if user is non-Nigerian (countryCode is not 'NG' or is null)
+    const isNonNigerian =
+      !mailData.data.countryCode ||
+      mailData.data.countryCode.toUpperCase() !== 'NG';
+
     await this.mailerService.sendMail({
       to: mailData.to,
       subject: emailConfirmTitle,
@@ -62,6 +74,9 @@ export class MailService {
         text1,
         text2,
         text3,
+        showPromoOffer: isNonNigerian,
+        appUrl,
+        unsubscribeUrl,
       },
     });
   }
@@ -791,6 +806,193 @@ export class MailService {
     await this.mailerService.sendMail({
       to: params.to,
       subject: 'Welcome to KickerGPT PRO! 🎉',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
+  async sendWelcomeEmail(params: {
+    to: string;
+    name?: string;
+    countryCode?: string | null;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    // Check if user is non-Nigerian (countryCode is not 'NG' or is null)
+    const showPromoOffer =
+      !params.countryCode || params.countryCode.toUpperCase() !== 'NG';
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'welcome.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      'Welcome to KickerGPT! 🎉',
+      '',
+      "Thank you for joining our community of football enthusiasts. Your email has been verified, and you're all set to start exploring the world of football intelligence.",
+      '',
+      "🚀 What's Next?",
+      '',
+      '✅ Explore Predictions - Get access to high-confidence match predictions',
+      '✅ Ask Questions - Use AI to get insights about matches, teams, and players',
+      '✅ Discover Features - Unlock the full power of football intelligence',
+      '',
+      `Open KickerGPT: ${appUrl}`,
+      ...(showPromoOffer
+        ? [
+            '',
+            '🎉 Welcome Bonus!',
+            '',
+            'KickerGPT PRO is now just $7/month',
+            '',
+            'Special Offer for New Customers',
+            '50% OFF',
+            'First month only - Use code: KICKERGPTNEWYEARDEAL',
+            "That's just $3.50 for your first month!",
+            '',
+            `Upgrade to PRO: ${appUrl}/plans?promo=KICKERGPTNEWYEARDEAL`,
+          ]
+        : []),
+      '',
+      "We're excited to have you on board and can't wait to see how you use KickerGPT to enhance your football experience.",
+      '',
+      "Questions? Just reply to this email - we're here to help!",
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: 'Welcome to KickerGPT! 🎉',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+        showPromoOffer,
+      },
+    });
+  }
+
+  async sendProPriceChangeEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'pro-price-change-promo.hbs',
+    );
+
+    const textBody = [
+      `Hey ${name},`,
+      '',
+      '🎉 Big News! KickerGPT PRO is Now Just $7/month',
+      '',
+      "We're excited to share some fantastic news! We've made KickerGPT PRO more accessible than ever. Starting today, PRO is just $7/month - making premium football intelligence available to more fans worldwide.",
+      '',
+      '⏰ Limited Time Offer: 50% OFF - Next 12 Hours Only!',
+      '',
+      'Use Promo Code: KICKERGPTNEWYEARDEAL',
+      '',
+      "That's just $3.50/month for the first month!",
+      '',
+      '⭐ Why Upgrade to PRO?',
+      '',
+      '🎯 Unlimited Match Predictions',
+      'Get access to all high-confidence match predictions with no limits. While free users see only 5 predictions, PRO members unlock the complete database of expert-analyzed matches.',
+      '',
+      '💬 100 AI Prompts Per Month',
+      'Ask unlimited questions about matches, teams, players, tactics, and more. Get deep insights with 10x more prompts than the free plan.',
+      '',
+      '🎨 Exclusive Strategies Feature',
+      'Create custom match-finding strategies with intelligent filters. Build your own criteria using team form, goals patterns, head-to-head records, injuries, and more.',
+      '',
+      '🚀 Priority Support & Early Access',
+      'Get priority customer support and be the first to access new features. PRO members are at the forefront of innovation.',
+      '',
+      'What You Get:',
+      '✅ Unlimited predictions - Never miss a high-confidence match',
+      '✅ 100 monthly AI prompts - Get answers to all your football questions',
+      '✅ Custom strategies - Build intelligent match filters',
+      '✅ Extended match access - View detailed analysis and insights',
+      '✅ Priority support - Get help when you need it',
+      '✅ Early access - Try new features before everyone else',
+      '',
+      `Upgrade to PRO now: https://kickergpt.com/plans`,
+      '',
+      "Offer expires in 12 hours. Don't miss this opportunity!",
+      '',
+      "Questions? Just reply to this email - we're here to help!",
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: '🎉 Special Offer: KickerGPT PRO Now Just $7 - 50% Off Today!',
       text: textBody,
       templatePath,
       headers: {

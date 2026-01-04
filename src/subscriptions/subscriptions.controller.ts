@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -142,7 +143,7 @@ export class SubscriptionsController {
     type: Subscription,
   })
   async addonPurchaseVerify(
-    @Body() data: { reference: string; token: string },
+    @Body() data: { reference?: string; sessionId?: string; token: string },
   ): Promise<Subscription> {
     let payload: JwtPayloadType;
     try {
@@ -164,10 +165,24 @@ export class SubscriptionsController {
       throw new NotFoundException('User not found');
     }
 
-    return this.subscriptionsService.verifyPaystackAddonPurchase(
-      data.reference,
-      user,
-    );
+    // Route to appropriate payment provider based on which identifier is provided
+    if (data.sessionId) {
+      // Stripe verification
+      return this.subscriptionsService.verifyStripeAddonPurchase(
+        data.sessionId,
+        user,
+      );
+    } else if (data.reference) {
+      // Paystack verification
+      return this.subscriptionsService.verifyPaystackAddonPurchase(
+        data.reference,
+        user,
+      );
+    } else {
+      throw new BadRequestException(
+        'Either reference (Paystack) or sessionId (Stripe) must be provided',
+      );
+    }
   }
 
   @Post('cancel')
