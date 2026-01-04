@@ -269,6 +269,7 @@ export class AuthService {
       to: dto.email,
       data: {
         hash,
+        countryCode: dto.countryCode,
       },
     });
   }
@@ -309,6 +310,22 @@ export class AuthService {
         name: StatusEnum.active,
       },
     });
+
+    // Send welcome email after email verification
+    if (user.email) {
+      try {
+        const userName =
+          user.firstName?.trim() || user.lastName?.trim() || 'there';
+        await this.mailService.sendWelcomeEmail({
+          to: user.email,
+          name: userName,
+          countryCode: user.countryCode,
+        });
+      } catch {
+        // Don't throw - email failure shouldn't break email confirmation flow
+        // Log error but continue
+      }
+    }
   }
 
   async confirmNewEmail(hash: string): Promise<void> {

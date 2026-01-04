@@ -78,13 +78,75 @@
               </td>
             </tr>
 
+            {{#if showPromoOffer}}
+              <tr>
+                <td
+                  style='padding:32px 40px;background:#0b0d14;border-top:1px solid rgba(255,255,255,0.06);'
+                >
+                  <div
+                    style='padding:24px;background:linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);border-radius:12px;text-align:center;'
+                  >
+                    <div
+                      style='font-size:24px;font-weight:700;color:#ffffff;margin:0 0 12px;'
+                    >
+                      🎉 Welcome Bonus!
+                    </div>
+                    <div
+                      style='font-size:18px;color:#e0e7ff;margin:0 0 16px;line-height:1.5;'
+                    >
+                      KickerGPT PRO is now just
+                      <strong style='color:#fbbf24;'>$7/month</strong>
+                    </div>
+                    <div
+                      style='padding:16px;background:rgba(255,255,255,0.1);border-radius:8px;border:2px dashed rgba(255,255,255,0.3);margin:0 0 20px;'
+                    >
+                      <div
+                        style='font-size:14px;color:#c7d2fe;margin:0 0 8px;text-transform:uppercase;letter-spacing:0.1em;'
+                      >
+                        Special Offer for New Customers
+                      </div>
+                      <div
+                        style='font-size:32px;font-weight:900;color:#fbbf24;margin:0 0 8px;'
+                      >
+                        50% OFF
+                      </div>
+                      <div
+                        style='font-size:16px;color:#e0e7ff;margin:0 0 12px;'
+                      >
+                        First month only - Use code:
+                      </div>
+                      <div
+                        style='font-size:20px;font-weight:800;color:#ffffff;letter-spacing:0.15em;font-family:monospace;background:rgba(0,0,0,0.2);padding:8px 16px;border-radius:6px;display:inline-block;'
+                      >
+                        KICKERGPTNEWYEARDEAL
+                      </div>
+                      <div
+                        style='font-size:14px;color:#c7d2fe;margin:12px 0 0;'
+                      >
+                        That's just
+                        <strong style='color:#10b981;'>$3.50</strong>
+                        for your first month!
+                      </div>
+                    </div>
+                    <a
+                      href='{{appUrl}}/plans'
+                      target='_blank'
+                      rel='noopener'
+                      style='display:inline-block;padding:12px 32px;background:#ffffff;color:#1e40af;text-decoration:none;font-weight:700;border-radius:8px;font-size:15px;box-shadow:0 4px 12px rgba(0,0,0,0.2);'
+                    >
+                      Upgrade to PRO →
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            {{/if}}
             <tr>
               <td
                 style='padding:24px 40px;background:#0b0d14;border-top:1px solid rgba(255,255,255,0.06);text-align:center;color:rgba(255,255,255,0.45);font-size:12px;'
               >
-                You’re receiving this email because you requested access to
+                You're receiving this email because you requested access to
                 {{app_name}}.<br />
-                Need help? Reply to this email and we’ll get back ASAP.
+                Need help? Reply to this email and we'll get back ASAP.
               </td>
             </tr>
           </table>

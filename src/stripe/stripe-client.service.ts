@@ -65,6 +65,10 @@ export class StripeClientService {
     return this.client.subscriptions.retrieve(subscriptionId);
   }
 
+  retrieveCheckoutSession(sessionId: string) {
+    return this.client.checkout.sessions.retrieve(sessionId);
+  }
+
   cancelSubscription(subscriptionId: string) {
     return this.client.subscriptions.cancel(subscriptionId);
   }

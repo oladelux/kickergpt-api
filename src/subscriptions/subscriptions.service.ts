@@ -182,13 +182,26 @@ export class SubscriptionsService {
     token?: string,
   ): Promise<string> {
     const subscription = await this.getSubscriptionForUser(user.id);
-    return this.handlePaystackAddonPurchase(
-      addonType,
-      subscription,
-      user,
-      isNativeUser,
-      token,
-    );
+    const paymentProvider = this.determinePaymentProvider(user?.countryCode);
+
+    // Route to appropriate payment provider
+    if (paymentProvider === PaymentProvider.PAYSTACK) {
+      return this.handlePaystackAddonPurchase(
+        addonType,
+        subscription,
+        user,
+        isNativeUser,
+        token,
+      );
+    } else {
+      return this.handleStripeAddonPurchase(
+        addonType,
+        subscription,
+        user,
+        isNativeUser,
+        token,
+      );
+    }
   }
 
   async handlePlanSelection(
@@ -285,6 +298,75 @@ export class SubscriptionsService {
     return session.url;
   }
 
+  private async handleStripeAddonPurchase(
+    addonType: AddonType,
+    subscription: Subscription,
+    user: User,
+    isNativeUser: boolean,
+    token?: string,
+  ): Promise<string> {
+    // Ensure Stripe customer exists
+    if (!subscription.stripeCustomerId) {
+      subscription = await this.ensureStripeCustomerForUser(user);
+    }
+
+    const { amount, currency } = this.getStripeAddonAmount(
+      addonType,
+      user?.countryCode,
+    );
+
+    // Build success URL with query parameters for verification
+    const baseSuccessUrl = this.configService.getOrThrow('stripe.successUrl', {
+      infer: true,
+    });
+    const successUrlParams = new URLSearchParams({
+      session_id: '{CHECKOUT_SESSION_ID}',
+      addon_type: addonType,
+    });
+    if (isNativeUser) {
+      successUrlParams.append('isNative', 'true');
+    }
+    if (token) {
+      successUrlParams.append('token', token);
+    }
+    const successUrl = `${baseSuccessUrl}?${successUrlParams.toString()}`;
+    const cancelUrl = this.configService.getOrThrow('stripe.cancelUrl', {
+      infer: true,
+    });
+
+    const session = await this.stripeClient.createCheckoutSession({
+      customer: subscription.stripeCustomerId!,
+      mode: 'payment',
+      payment_method_types: ['card'],
+      metadata: {
+        user_id: user.id,
+        addon_type: addonType,
+        is_native_user: isNativeUser.toString(),
+      },
+      line_items: [
+        {
+          price_data: {
+            currency: currency.toLowerCase(),
+            product_data: {
+              name: this.getAddonName(addonType),
+              description: this.getAddonDescription(addonType),
+            },
+            unit_amount: amount,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    });
+
+    if (!session.url) {
+      throw new InternalServerErrorException('Stripe session missing url');
+    }
+
+    return session.url;
+  }
+
   private async handlePaystackAddonPurchase(
     addonType: AddonType,
     subscription: Subscription,
@@ -320,25 +402,142 @@ export class SubscriptionsService {
     return transactionResponse.data.authorization_url;
   }
   private getAddonAmount(addonType: AddonType): number {
+    // Paystack amounts in kobo (NGN)
+    // Prices: 10 credits = ₦2000, 25 credits = ₦4000, 50 credits = ₦6000
     switch (addonType) {
       case AddonType.TEN_PROMPT_CREDITS:
-        return 150000;
+        return 200000; // ₦2000 = 200000 kobo
       case AddonType.TWENTY_FIVE_PROMPT_CREDITS:
-        return 300000;
+        return 400000; // ₦4000 = 400000 kobo
       case AddonType.FIFTY_PROMPT_CREDITS:
-        return 500000;
+        return 600000; // ₦6000 = 600000 kobo
+      default:
+        throw new BadRequestException('Invalid addon type');
+    }
+  }
+
+  /**
+   * Get Stripe addon amount and currency based on addon type and country.
+   * Returns amount in smallest currency unit (cents for USD/EUR/GBP, kobo for NGN).
+   */
+  private getStripeAddonAmount(
+    addonType: AddonType,
+    countryCode?: string | null,
+  ): { amount: number; currency: string } {
+    if (!countryCode) {
+      // Default to USD
+      return this.getStripeAddonAmountByCurrency(addonType, 'USD');
+    }
+
+    const normalizedCountry = countryCode.toUpperCase();
+
+    // Nigeria uses NGN
+    if (normalizedCountry === 'NG') {
+      return this.getStripeAddonAmountByCurrency(addonType, 'NGN');
+    }
+
+    // United Kingdom uses GBP
+    if (normalizedCountry === 'GB') {
+      return this.getStripeAddonAmountByCurrency(addonType, 'GBP');
+    }
+
+    // European countries use EUR
+    const europeanCountries = [
+      'AT',
+      'BE',
+      'CY',
+      'EE',
+      'FI',
+      'FR',
+      'DE',
+      'GR',
+      'IE',
+      'IT',
+      'LV',
+      'LT',
+      'LU',
+      'MT',
+      'NL',
+      'PT',
+      'SK',
+      'SI',
+      'ES',
+    ];
+    if (europeanCountries.includes(normalizedCountry)) {
+      return this.getStripeAddonAmountByCurrency(addonType, 'EUR');
+    }
+
+    // Default to USD for all other countries
+    return this.getStripeAddonAmountByCurrency(addonType, 'USD');
+  }
+
+  /**
+   * Get Stripe addon amount for a specific currency.
+   * Amounts are in smallest currency unit (cents/kobo).
+   * Prices: 10 credits = $2, 25 credits = $4, 50 credits = $6
+   */
+  private getStripeAddonAmountByCurrency(
+    addonType: AddonType,
+    currency: 'USD' | 'EUR' | 'GBP' | 'NGN',
+  ): { amount: number; currency: string } {
+    // Fixed prices in base currency (USD)
+    const usdPrices = {
+      [AddonType.TEN_PROMPT_CREDITS]: 2, // $2
+      [AddonType.TWENTY_FIVE_PROMPT_CREDITS]: 4, // $4
+      [AddonType.FIFTY_PROMPT_CREDITS]: 6, // $6
+    };
+
+    const usdPrice = usdPrices[addonType];
+
+    // Convert to appropriate currency
+    // For USD, EUR, GBP: use same numeric value (2, 4, 6)
+    // For NGN: convert using approximate rate (1 USD ≈ 1000 NGN)
+    if (currency === 'USD') {
+      return { amount: usdPrice * 100, currency }; // Convert to cents
+    } else if (currency === 'EUR') {
+      return { amount: usdPrice * 100, currency }; // Same price in EUR (cents)
+    } else if (currency === 'GBP') {
+      return { amount: usdPrice * 100, currency }; // Same price in GBP (pence)
+    } else {
+      // NGN: 1 USD ≈ 1000 NGN, so multiply by 1000 and convert to kobo
+      return { amount: usdPrice * 1000 * 100, currency }; // Convert to kobo
+    }
+  }
+
+  private getAddonName(addonType: AddonType): string {
+    switch (addonType) {
+      case AddonType.TEN_PROMPT_CREDITS:
+        return '10 Prompt Credits';
+      case AddonType.TWENTY_FIVE_PROMPT_CREDITS:
+        return '25 Prompt Credits';
+      case AddonType.FIFTY_PROMPT_CREDITS:
+        return '50 Prompt Credits';
+      default:
+        throw new BadRequestException('Invalid addon type');
+    }
+  }
+
+  private getAddonDescription(addonType: AddonType): string {
+    switch (addonType) {
+      case AddonType.TEN_PROMPT_CREDITS:
+        return 'Additional 10 prompt credits for your account';
+      case AddonType.TWENTY_FIVE_PROMPT_CREDITS:
+        return 'Additional 25 prompt credits for your account';
+      case AddonType.FIFTY_PROMPT_CREDITS:
+        return 'Additional 50 prompt credits for your account';
       default:
         throw new BadRequestException('Invalid addon type');
     }
   }
 
   private getAddonPurchaseByAmount(amount: number): AddonType {
+    // Paystack amounts in kobo (NGN)
     switch (amount) {
-      case 150000:
+      case 200000: // ₦2000
         return AddonType.TEN_PROMPT_CREDITS;
-      case 300000:
+      case 400000: // ₦4000
         return AddonType.TWENTY_FIVE_PROMPT_CREDITS;
-      case 500000:
+      case 600000: // ₦6000
         return AddonType.FIFTY_PROMPT_CREDITS;
       default:
         throw new BadRequestException('Invalid amount');
@@ -574,6 +773,141 @@ export class SubscriptionsService {
     return this.configService.getOrThrow('stripe.proPriceIdUsd', {
       infer: true,
     });
+  }
+
+  /**
+   * Handle Stripe addon purchase automatically (called from webhook).
+   * This grants credits to the user after successful payment.
+   */
+  public async processStripeAddonPurchaseWebhook(
+    sessionId: string,
+  ): Promise<void> {
+    const session = await this.stripeClient.retrieveCheckoutSession(sessionId);
+
+    // Only process payment mode sessions (not subscriptions)
+    if (session.mode !== 'payment') {
+      this.logger.log(
+        `Skipping session ${sessionId} - not a payment session (mode: ${session.mode})`,
+      );
+      return;
+    }
+
+    // Verify the session is completed and paid
+    if (session.payment_status !== 'paid') {
+      this.logger.warn(
+        `Session ${sessionId} payment status is not paid: ${session.payment_status}`,
+      );
+      return;
+    }
+
+    // Get user ID from metadata
+    const metadataUserId = session.metadata?.user_id;
+    if (!metadataUserId) {
+      this.logger.error(`Session ${sessionId} missing user_id in metadata`);
+      return;
+    }
+
+    // Get addon type from metadata
+    const addonType = session.metadata?.addon_type as AddonType;
+    if (!addonType || !Object.values(AddonType).includes(addonType)) {
+      this.logger.error(
+        `Session ${sessionId} has invalid addon_type in metadata: ${addonType}`,
+      );
+      return;
+    }
+
+    const user = await this.usersService.findById(metadataUserId);
+    if (!user) {
+      this.logger.error(
+        `User not found for session ${sessionId}: ${metadataUserId}`,
+      );
+      return;
+    }
+
+    const existingSubscription = await this.subscriptionRepository.findByUserId(
+      user.id,
+    );
+
+    if (!existingSubscription) {
+      this.logger.error(
+        `Subscription not found for user ${user.id} in session ${sessionId}`,
+      );
+      return;
+    }
+
+    const addonCredits = this.getAddonCreditsByType(addonType);
+    if (!addonCredits) {
+      this.logger.error(
+        `Invalid addon type for session ${sessionId}: ${addonType}`,
+      );
+      return;
+    }
+
+    // Grant addon credits to the user
+    await this.promptUsageService.addAddonCredits(user.id, addonCredits);
+
+    // Ensure Stripe customer is set
+    await this.subscriptionRepository.update(existingSubscription.id, {
+      stripeCustomerId: session.customer as string,
+      paymentProvider: PaymentProvider.STRIPE,
+    });
+
+    this.logger.log(
+      `Granted ${addonCredits} addon credits to user ${user.id} from Stripe session ${sessionId}`,
+    );
+  }
+
+  public async verifyStripeAddonPurchase(sessionId: string, user: User) {
+    const session = await this.stripeClient.retrieveCheckoutSession(sessionId);
+
+    // Verify the session is completed and paid
+    if (session.payment_status !== 'paid') {
+      throw new BadRequestException('Payment not completed');
+    }
+
+    // Verify the session mode is payment (not subscription)
+    if (session.mode !== 'payment') {
+      throw new BadRequestException('Invalid session type');
+    }
+
+    // Verify the user matches
+    const metadataUserId = session.metadata?.user_id;
+    if (metadataUserId !== user.id) {
+      throw new BadRequestException('User mismatch');
+    }
+
+    // Get addon type from metadata
+    const addonType = session.metadata?.addon_type as AddonType;
+    if (!addonType || !Object.values(AddonType).includes(addonType)) {
+      throw new BadRequestException('Invalid addon type in session');
+    }
+
+    const existingSubscription = await this.subscriptionRepository.findByUserId(
+      user.id,
+    );
+
+    if (!existingSubscription) {
+      throw new NotFoundException(`Subscription not found for user ${user.id}`);
+    }
+
+    const addonCredits = this.getAddonCreditsByType(addonType);
+    if (!addonCredits) {
+      throw new BadRequestException('Invalid addon type');
+    }
+
+    // We bump the addon credits in the prompt usage table
+    await this.promptUsageService.addAddonCredits(user.id, addonCredits);
+
+    // Ensure Stripe customer is set
+    const updatedSubscription = await this.subscriptionRepository.update(
+      existingSubscription.id,
+      {
+        stripeCustomerId: session.customer as string,
+        paymentProvider: PaymentProvider.STRIPE,
+      },
+    );
+
+    return updatedSubscription;
   }
 
   public async verifyPaystackAddonPurchase(reference: string, user: User) {
