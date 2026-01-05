@@ -28,8 +28,8 @@ export class ProPriceChangeEmailScheduler {
    */
   @Cron('00 07 * * *')
   async sendProPriceChangeEmail(): Promise<void> {
-    // Remove this return statement when ready to send
-    // return;
+    //Remove this return statement when ready to send
+    return;
     this.logger.log(
       'Starting Pro price change announcement bulk email job for non-Nigerian users...',
     );
