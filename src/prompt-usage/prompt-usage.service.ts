@@ -18,13 +18,10 @@ export class PromptUsageService {
   ) {}
 
   async getUsage(userId: string): Promise<PromptUsage> {
-    let usage = await this.repository.findByUserId(userId);
-    if (!usage) {
-      usage = await this.repository.create({
-        userId,
-        periodStart: this.calculateCurrentPeriodStart(),
-      });
-    }
+    const usage = await this.repository.findOrCreate({
+      userId,
+      periodStart: this.calculateCurrentPeriodStart(),
+    });
 
     return this.ensureCurrentPeriod(usage);
   }

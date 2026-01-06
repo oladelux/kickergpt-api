@@ -1074,6 +1074,114 @@ export class MailService {
     });
   }
 
+  async sendNigerianPricingUpdateEmail(params: {
+    to: string;
+    name?: string;
+    appUrl?: string;
+    unsubscribeUrl?: string;
+  }): Promise<void> {
+    if (!this.isMailEnabled()) {
+      return;
+    }
+
+    const name = params.name?.trim() || 'there';
+    const appUrl =
+      params.appUrl ||
+      this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      });
+    const unsubscribeUrl =
+      params.unsubscribeUrl ||
+      `${this.configService.getOrThrow('app.frontendDomain', {
+        infer: true,
+      })}/unsubscribe`;
+
+    const templatePath = path.join(
+      this.configService.getOrThrow('app.workingDirectory', {
+        infer: true,
+      }),
+      'src',
+      'mail',
+      'mail-templates',
+      'nigerian-pricing-update.hbs',
+    );
+
+    const textBody = [
+      `Dear ${name},`,
+      '',
+      "We're writing to inform you about important updates to our subscription plans for Nigerian users. We've introduced new flexible options designed to better serve your needs.",
+      '',
+      'New Subscription Plans Available',
+      '',
+      "We're excited to introduce three new subscription options tailored for our Nigerian users, giving you more flexibility to choose the plan that works best for you.",
+      '',
+      '3-Day Pass - ₦700',
+      'Perfect for trying out premium features or covering a weekend of matches.',
+      '• Unlimited AI prompts for 3 days',
+      '• Ad-free experience',
+      '• Priority support',
+      '',
+      '7-Day Pass - ₦1,200',
+      'Ideal for a full week of match analysis and predictions.',
+      '• Unlimited AI prompts for 7 days',
+      '• Ad-free experience',
+      '• Priority support',
+      '',
+      'Monthly Unlimited - ₦3,000',
+      'Best value for regular users who want unlimited access every month.',
+      '• Unlimited AI prompts each month',
+      '• AI-powered match predictions',
+      '• Strategy analysis feature',
+      '• Ad-free experience',
+      '• Priority support',
+      '',
+      'What You Get with Premium Plans',
+      '',
+      'Unlimited AI Prompts: Ask as many questions as you need about matches, teams, players, and tactics.',
+      '',
+      'Match Predictions: Access high-confidence predictions powered by advanced analysis.',
+      '',
+      'Strategy Analysis: Create custom match-finding strategies with intelligent filters (Monthly Unlimited plan).',
+      '',
+      'Ad-Free Experience: Enjoy uninterrupted analysis without distractions.',
+      '',
+      'Priority Support: Get help when you need it with dedicated customer support.',
+      '',
+      `Explore our new plans: ${appUrl}/plans`,
+      '',
+      'Important Information',
+      '',
+      'Your current subscription and account status remain unchanged. These new plans are additional options available for new subscriptions or when you choose to upgrade.',
+      '',
+      "If you have any questions about these changes or need assistance choosing the right plan, please don't hesitate to reach out to us.",
+      '',
+      "Thank you for being a valued member of the KickerGPT community. We're committed to providing you with the best football intelligence platform.",
+      '',
+      "If you have any questions, please reply to this email. We're here to help.",
+      '',
+      'The KickerGPT Team',
+      '',
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n');
+
+    await this.mailerService.sendMail({
+      to: params.to,
+      subject: 'Important Update: New Subscription Plans Available - KickerGPT',
+      text: textBody,
+      templatePath,
+      headers: {
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        Precedence: 'bulk',
+      },
+      context: {
+        name,
+        appUrl,
+        unsubscribeUrl,
+      },
+    });
+  }
+
   async sendStrategyMatchesEmail(params: {
     to: string;
     name?: string;

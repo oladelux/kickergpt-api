@@ -15,4 +15,9 @@ export abstract class PromptUsageRepository {
   ): Promise<PromptUsage>;
 
   abstract deleteByUserId(userId: string): Promise<void>;
+
+  abstract findOrCreate(data: {
+    userId: string;
+    periodStart: Date;
+  }): Promise<PromptUsage>;
 }
