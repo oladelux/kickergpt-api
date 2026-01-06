@@ -56,10 +56,13 @@
               >
                 <p style='margin:0 0 12px;'>Hey {{name}},</p>
                 <p style='margin:0 0 16px;'>
-                  Welcome to <strong>KickerGPT PRO</strong>! 🎉
+                  Welcome to
+                  <strong>KickerGPT {{planName}}</strong>! 🎉
                 </p>
                 <p style='margin:0 0 20px;'>
-                  Thank you for upgrading. You now have access to the full power of KickerGPT. Here's what you can do:
+                  Thank you for upgrading. You now have access to the full power
+                  of KickerGPT
+                  {{planDuration}}. Here's what you can do:
                 </p>
 
                 <div style='margin:20px 0;'>
@@ -68,41 +71,18 @@
                   >
                     <div
                       style='font-size:28px;font-weight:800;margin:0 0 8px;'
-                    >⭐ PRO Benefits</div>
+                    >⭐ {{planName}} Benefits</div>
                   </div>
 
-                  <div
-                    style='margin:0 0 18px;padding:16px;background:#f0fdf4;border-radius:8px;border-left:3px solid #10b981;'
-                  >
+                  {{#each features}}
                     <div
-                      style='font-weight:600;color:#111827;margin:0 0 6px;'
-                    >🎯 Unlimited Predictions</div>
-                    <div style='color:#4b5563;font-size:14px;'>
-                      Get access to <strong>all high-confidence match predictions</strong> - no limits! While free users see 5 predictions, you get everything.
+                      style='margin:0 0 18px;padding:16px;background:#f0fdf4;border-radius:8px;border-left:3px solid #10b981;'
+                    >
+                      <div
+                        style='font-weight:600;color:#111827;margin:0 0 6px;'
+                      >✅ {{this}}</div>
                     </div>
-                  </div>
-
-                  <div
-                    style='margin:0 0 18px;padding:16px;background:#eff6ff;border-radius:8px;border-left:3px solid #3b82f6;'
-                  >
-                    <div
-                      style='font-weight:600;color:#111827;margin:0 0 6px;'
-                    >💬 100 Prompts Per Month</div>
-                    <div style='color:#4b5563;font-size:14px;'>
-                      Ask unlimited questions about matches, teams, players, and more. Get deep insights with 10x more prompts than the free plan.
-                    </div>
-                  </div>
-
-                  <div
-                    style='margin:0 0 18px;padding:16px;background:#fef3c7;border-radius:8px;border-left:3px solid #f59e0b;'
-                  >
-                    <div
-                      style='font-weight:600;color:#111827;margin:0 0 6px;'
-                    >🚀 Exclusive Features</div>
-                    <div style='color:#4b5563;font-size:14px;'>
-                      Access to all premium features and priority support. More exclusive features coming soon!
-                    </div>
-                  </div>
+                  {{/each}}
                 </div>
 
                 <div
@@ -112,19 +92,26 @@
                     style='font-weight:600;color:#111827;margin:0 0 12px;font-size:16px;'
                   >💡 Getting Started</div>
                   <div style='color:#4b5563;font-size:14px;line-height:1.6;'>
-                    <strong>1. Check Your Predictions</strong><br/>
-                    Visit the Predictions section to see today's high-confidence match predictions.<br/><br/>
-                    <strong>2. Ask Deep Questions</strong><br/>
-                    Use your 100 monthly prompts to dive deep into match analysis, team strategies, and player insights.<br/><br/>
-                    <strong>3. Explore All Features</strong><br/>
-                    Take advantage of extended match access, detailed analysis, and all PRO-exclusive features.
+                    <strong>1. Check Your Predictions</strong><br />
+                    Visit the Predictions section to see today's high-confidence
+                    match predictions.<br /><br />
+                    <strong>2. Ask Deep Questions</strong><br />
+                    Use your
+                    {{promptsDescription}}
+                    to dive deep into match analysis, team strategies, and
+                    player insights.<br /><br />
+                    <strong>3. Explore All Features</strong><br />
+                    Take advantage of extended match access, detailed analysis,
+                    and all premium features.
                   </div>
                 </div>
 
                 <div
                   style='margin:24px 0;padding:20px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;text-align:center;'
                 >
-                  <div style='color:#1e40af;font-size:16px;margin:0 0 12px;font-weight:600;'>
+                  <div
+                    style='color:#1e40af;font-size:16px;margin:0 0 12px;font-weight:600;'
+                  >
                     Ready to get started?
                   </div>
                   <a
@@ -138,7 +125,8 @@
                 </div>
 
                 <p style='margin:20px 0 6px;color:#4b5563;font-size:14px;'>
-                  If you have any questions or need help, just reply to this email. We're here to help!
+                  If you have any questions or need help, just reply to this
+                  email. We're here to help!
                 </p>
                 <p style='margin:0;font-weight:600;'>The KickerGPT Team</p>
               </td>
@@ -149,7 +137,8 @@
                 style='padding:16px 28px;border-top:1px solid #e5e7eb;text-align:center;color:#6b7280;font-size:12px;line-height:1.6;'
               >
                 <p style='margin:0 0 8px;'>
-                  You're receiving this email because you upgraded to KickerGPT PRO.
+                  You're receiving this email because you upgraded to KickerGPT
+                  {{planName}}.
                 </p>
                 <p style='margin:0 0 12px;'>
                   Need help? Reply to this email and we'll get back ASAP.
@@ -170,4 +159,3 @@
     </table>
   </body>
 </html>
-

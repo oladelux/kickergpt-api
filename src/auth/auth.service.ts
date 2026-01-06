@@ -309,6 +309,7 @@ export class AuthService {
       status: {
         name: StatusEnum.active,
       },
+      countryCode: user.countryCode,
     });
 
     // Send welcome email after email verification
