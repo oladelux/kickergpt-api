@@ -27,4 +27,10 @@ export class PromptUsageSummaryDto {
 
   @ApiProperty()
   totalCreditsRemaining: number;
+
+  @ApiProperty({
+    description:
+      'Indicates if user has unlimited prompts (Nigerian PRO users). When true, ignore monthlyAllowance/monthlyRemaining values.',
+  })
+  isUnlimited: boolean;
 }

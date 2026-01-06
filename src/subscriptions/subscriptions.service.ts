@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import { InitializeTransaction } from 'paystack-sdk/dist/transaction/interface';
 import { AllConfigType } from '../config/config.type';
 import { UsersService } from '../users/users.service';
 import { User } from '../users/domain/user';
@@ -160,8 +161,21 @@ export class SubscriptionsService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    const subscription = await this.subscriptionRepository.findByUserId(userId);
+    let subscription = await this.subscriptionRepository.findByUserId(userId);
     const paymentProvider = this.determinePaymentProvider(user?.countryCode);
+
+    // Check if subscription has expired and reset to FREE if so
+    if (subscription) {
+      subscription = await this.checkAndResetExpiredSubscription(subscription);
+    }
+
+    // Migrate Nigerian PRO users to MONTHLY_UNLIMITED
+    if (subscription) {
+      subscription = await this.migrateNigerianProToMonthlyUnlimited(
+        subscription,
+        user?.countryCode,
+      );
+    }
 
     // Check Stripe or Paystack
     if (subscription?.stripeCustomerId || subscription?.paystackCustomerCode) {
@@ -175,12 +189,92 @@ export class SubscriptionsService {
     }
   }
 
+  /**
+   * Check if a subscription has expired and reset to FREE if so.
+   * This is called on every subscription access (lazy evaluation).
+   */
+  private async checkAndResetExpiredSubscription(
+    subscription: Subscription,
+  ): Promise<Subscription> {
+    const now = new Date();
+
+    // Only check expiry for time-limited plans
+    const timeLimitedPlans = [
+      SubscriptionPlan.THREE_DAY_PASS,
+      SubscriptionPlan.SEVEN_DAY_PASS,
+      SubscriptionPlan.MONTHLY_UNLIMITED,
+    ];
+
+    if (
+      subscription.currentPeriodEnd &&
+      subscription.currentPeriodEnd < now &&
+      timeLimitedPlans.includes(subscription.plan)
+    ) {
+      this.logger.log(
+        `Subscription ${subscription.id} has expired. Resetting to FREE plan.`,
+      );
+
+      return this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
+        plan: SubscriptionPlan.FREE,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: null,
+        paystackSubscriptionCode: null,
+        paystackCustomerCode: subscription.paystackCustomerCode,
+        stripeCustomerId: subscription.stripeCustomerId,
+        stripeSubscriptionId: subscription.stripeSubscriptionId,
+        paymentProvider: subscription.paymentProvider,
+      });
+    }
+
+    return subscription;
+  }
+
+  /**
+   * Migrate Nigerian users with PRO plan to MONTHLY_UNLIMITED.
+   * This is a one-time migration that happens on subscription access.
+   */
+  private async migrateNigerianProToMonthlyUnlimited(
+    subscription: Subscription,
+    countryCode?: string | null,
+  ): Promise<Subscription> {
+    // Only migrate Nigerian users with active PRO subscription
+    if (
+      countryCode?.toUpperCase() === 'NG' &&
+      subscription.plan === SubscriptionPlan.PRO &&
+      subscription.status === SubscriptionStatus.ACTIVE
+    ) {
+      this.logger.log(
+        `Migrating Nigerian PRO user ${subscription.userId} to MONTHLY_UNLIMITED plan.`,
+      );
+
+      return this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
+        plan: SubscriptionPlan.MONTHLY_UNLIMITED,
+        status: SubscriptionStatus.ACTIVE,
+        currentPeriodEnd: subscription.currentPeriodEnd,
+        paystackSubscriptionCode: subscription.paystackSubscriptionCode,
+        paystackCustomerCode: subscription.paystackCustomerCode,
+        stripeCustomerId: subscription.stripeCustomerId,
+        stripeSubscriptionId: subscription.stripeSubscriptionId,
+        paymentProvider: subscription.paymentProvider,
+      });
+    }
+
+    return subscription;
+  }
+
   async purchaseAddon(
     addonType: AddonType,
     user: User,
     isNativeUser: boolean,
     token?: string,
   ): Promise<string> {
+    // Block addon purchases for Nigerian users
+    if (user?.countryCode?.toUpperCase() === 'NG') {
+      throw new BadRequestException(
+        'Addon purchases are not available for Nigerian users',
+      );
+    }
+
     const subscription = await this.getSubscriptionForUser(user.id);
     const paymentProvider = this.determinePaymentProvider(user?.countryCode);
 
@@ -214,6 +308,13 @@ export class SubscriptionsService {
     const subscription = await this.getSubscriptionForUser(userId);
     const paymentProvider = this.determinePaymentProvider(countryCode);
 
+    // Block PRO plan for Nigerian users
+    if (countryCode?.toUpperCase() === 'NG' && plan === SubscriptionPlan.PRO) {
+      throw new BadRequestException(
+        'PRO plan is not available for Nigerian users. Please select from 3-Day Pass, 7-Day Pass, or Monthly Unlimited.',
+      );
+    }
+
     if (plan === SubscriptionPlan.FREE) {
       await this.subscriptionRepository.updatePlanAndStatus(subscription.id, {
         plan: SubscriptionPlan.FREE,
@@ -228,12 +329,17 @@ export class SubscriptionsService {
       return null;
     }
 
-    if (
-      subscription.plan === SubscriptionPlan.PRO &&
+    // Check if subscription is already active for PRO or new Nigerian plans
+    const isActivePlan =
+      (subscription.plan === SubscriptionPlan.PRO ||
+        subscription.plan === SubscriptionPlan.THREE_DAY_PASS ||
+        subscription.plan === SubscriptionPlan.SEVEN_DAY_PASS ||
+        subscription.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
       subscription.status === SubscriptionStatus.ACTIVE &&
       (subscription.stripeSubscriptionId ||
-        subscription.paystackSubscriptionCode)
-    ) {
+        subscription.paystackSubscriptionCode);
+
+    if (isActivePlan) {
       throw new BadRequestException('Subscription already active');
     }
     const user = await this.usersService.findById(userId);
@@ -247,6 +353,7 @@ export class SubscriptionsService {
       return this.handlePaystackPlanSelection(
         user,
         subscription,
+        plan,
         isNativeUser,
         token,
       );
@@ -558,6 +665,7 @@ export class SubscriptionsService {
   private async handlePaystackPlanSelection(
     user: User,
     subscription: Subscription,
+    plan: SubscriptionPlan,
     isNativeUser: boolean,
     token?: string,
   ): Promise<string> {
@@ -566,17 +674,42 @@ export class SubscriptionsService {
       subscription = await this.ensurePaystackCustomerForUser(user);
     }
 
-    const planCode = this.getPaystackPlanCodeByCountry();
-    const transactionResponse = await this.paystackClient.initializeTransaction(
-      {
+    const price = this.getNigerianPlanPrice(plan);
+
+    // For 3-Day and 7-Day passes, use one-time payment with hardcoded prices
+    // For Monthly Unlimited and PRO, use subscription with plan codes
+    const isOneTimePayment =
+      plan === SubscriptionPlan.THREE_DAY_PASS ||
+      plan === SubscriptionPlan.SEVEN_DAY_PASS;
+
+    let transactionResponse;
+    if (isOneTimePayment) {
+      // One-time payment for 3-Day and 7-Day passes (hardcoded prices)
+      const transactionData: InitializeTransaction = {
         email: user.email ?? '',
-        amount: '1000',
+        amount: price.toString(),
+      } as InitializeTransaction;
+      transactionResponse = await this.paystackClient.initializeTransaction(
+        transactionData,
+        'plan_purchase',
+        isNativeUser,
+        token,
+      );
+    } else {
+      // Subscription for Monthly Unlimited and PRO (use plan codes)
+      const planCode = this.getPaystackPlanCodeByPlan(plan);
+      const transactionData = {
+        email: user.email ?? '',
         plan: planCode,
-      },
-      'plan_purchase',
-      isNativeUser,
-      token,
-    );
+        amount: '300000',
+      } as InitializeTransaction;
+      transactionResponse = await this.paystackClient.initializeTransaction(
+        transactionData,
+        'plan_purchase',
+        isNativeUser,
+        token,
+      );
+    }
 
     if (!transactionResponse.status) {
       throw new Error('Transaction initialization failed');
@@ -693,13 +826,51 @@ export class SubscriptionsService {
   }
 
   /**
-   * Get Paystack plan code based on country.
+   * Get Paystack plan code based on plan type.
+   * Only PRO and MONTHLY_UNLIMITED have plan codes.
+   * 3-Day and 7-Day passes use one-time payments with hardcoded prices.
    */
-  private getPaystackPlanCodeByCountry(): string {
-    // Paystack is only used for Nigeria, so always return NGN plan code
-    return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
-      infer: true,
-    });
+  private getPaystackPlanCodeByPlan(plan: SubscriptionPlan): string {
+    switch (plan) {
+      case SubscriptionPlan.PRO:
+        return this.configService.getOrThrow('paystack.proPlanCodeNgn', {
+          infer: true,
+        });
+      case SubscriptionPlan.MONTHLY_UNLIMITED:
+        return this.configService.getOrThrow(
+          'paystack.monthlyUnlimitedPlanCode',
+          {
+            infer: true,
+          },
+        );
+      case SubscriptionPlan.THREE_DAY_PASS:
+      case SubscriptionPlan.SEVEN_DAY_PASS:
+        // These plans use one-time payments, not subscription plans
+        throw new BadRequestException(
+          `${plan} does not use a Paystack plan code. It uses a one-time payment.`,
+        );
+      default:
+        throw new BadRequestException(`Invalid plan type: ${plan}`);
+    }
+  }
+
+  /**
+   * Get Nigerian plan price in kobo.
+   */
+  private getNigerianPlanPrice(plan: SubscriptionPlan): number {
+    switch (plan) {
+      case SubscriptionPlan.THREE_DAY_PASS:
+        return 70000; // ₦700 in kobo
+      case SubscriptionPlan.SEVEN_DAY_PASS:
+        return 120000; // ₦1,200 in kobo
+      case SubscriptionPlan.MONTHLY_UNLIMITED:
+        return 300000; // ₦3,000 in kobo
+      case SubscriptionPlan.PRO:
+        // Legacy PRO plan - use existing plan code
+        return 0; // Will use subscription plan code
+      default:
+        throw new BadRequestException(`Invalid Nigerian plan type: ${plan}`);
+    }
   }
 
   /**
@@ -952,6 +1123,86 @@ export class SubscriptionsService {
     return updatedSubscription;
   }
 
+  /**
+   * Determine plan from Paystack transaction data.
+   * For one-time payments, determine from amount.
+   * For subscriptions, determine from subscription code or metadata.
+   */
+  private determinePlanFromTransaction(transactionData: any): SubscriptionPlan {
+    // Check if transaction has plan metadata
+    if (transactionData.metadata?.plan) {
+      const plan = transactionData.metadata.plan as SubscriptionPlan;
+      if (Object.values(SubscriptionPlan).includes(plan)) {
+        return plan;
+      }
+    }
+
+    // For one-time payments, determine from amount
+    const amount = transactionData.amount;
+    if (amount === 70000) {
+      return SubscriptionPlan.THREE_DAY_PASS;
+    }
+    if (amount === 120000) {
+      return SubscriptionPlan.SEVEN_DAY_PASS;
+    }
+
+    // For subscriptions, check subscription code to determine plan
+    // If subscription code exists, it's likely Monthly Unlimited or PRO
+    if (transactionData.subscription_code) {
+      // Check subscription plan code from Paystack
+      const subscriptionPlanCode = transactionData.plan?.plan_code;
+      if (subscriptionPlanCode) {
+        const monthlyUnlimitedCode = this.configService.get(
+          'paystack.monthlyUnlimitedPlanCode',
+          { infer: true },
+        );
+        const proCode = this.configService.get('paystack.proPlanCodeNgn', {
+          infer: true,
+        });
+
+        if (subscriptionPlanCode === monthlyUnlimitedCode) {
+          return SubscriptionPlan.MONTHLY_UNLIMITED;
+        }
+        if (subscriptionPlanCode === proCode) {
+          return SubscriptionPlan.PRO;
+        }
+      }
+      // Default to PRO for subscriptions without clear plan code
+      return SubscriptionPlan.PRO;
+    }
+
+    // Default fallback - should not reach here in normal flow
+    this.logger.warn(
+      `Could not determine plan from transaction. Amount: ${amount}, Subscription: ${transactionData.subscription_code}`,
+    );
+    return SubscriptionPlan.PRO;
+  }
+
+  /**
+   * Calculate period end date based on plan type and purchase date.
+   */
+  private calculatePeriodEnd(
+    plan: SubscriptionPlan,
+    purchaseDate: Date,
+  ): Date | null {
+    const endDate = new Date(purchaseDate);
+
+    switch (plan) {
+      case SubscriptionPlan.THREE_DAY_PASS:
+        endDate.setDate(endDate.getDate() + 3);
+        return endDate;
+      case SubscriptionPlan.SEVEN_DAY_PASS:
+        endDate.setDate(endDate.getDate() + 7);
+        return endDate;
+      case SubscriptionPlan.MONTHLY_UNLIMITED:
+      case SubscriptionPlan.PRO:
+        endDate.setMonth(endDate.getMonth() + 1);
+        return endDate;
+      default:
+        return null;
+    }
+  }
+
   public async verifyPayment(reference: string, user: User) {
     const transaction = await this.paystackClient.verifyTransaction(reference);
     if (!transaction.status) {
@@ -973,15 +1224,25 @@ export class SubscriptionsService {
       throw new NotFoundException(`Subscription not found for user ${user.id}`);
     }
 
-    const isActive = existingSubscription.status === SubscriptionStatus.ACTIVE;
-    const isUpgradingToPro =
+    const isActive = transaction.data.status === 'success';
+    const determinedPlan = this.determinePlanFromTransaction(transaction.data);
+
+    // Calculate period end based on plan type
+    const purchaseDate = transaction.data.paidAt
+      ? new Date(transaction.data.paidAt)
+      : new Date();
+    const currentPeriodEnd = isActive
+      ? this.calculatePeriodEnd(determinedPlan, purchaseDate)
+      : null;
+
+    const isUpgradingFromFree =
       existingSubscription.plan === SubscriptionPlan.FREE && isActive;
 
     const updatedSubscription =
       await this.subscriptionRepository.updatePlanAndStatus(
         existingSubscription.id,
         {
-          plan: isActive ? SubscriptionPlan.PRO : SubscriptionPlan.FREE,
+          plan: isActive ? determinedPlan : SubscriptionPlan.FREE,
           status: isActive
             ? SubscriptionStatus.ACTIVE
             : SubscriptionStatus.INACTIVE,
@@ -990,23 +1251,22 @@ export class SubscriptionsService {
           stripeCustomerId: null,
           paymentProvider: PaymentProvider.PAYSTACK,
           stripeSubscriptionId: null,
-          currentPeriodEnd:
-            isActive && transaction.data.paidAt
-              ? new Date(
-                  new Date(transaction.data.paidAt).setMonth(
-                    new Date(transaction.data.paidAt).getMonth() + 1,
-                  ),
-                )
-              : null,
+          currentPeriodEnd,
         },
       );
 
-    // Reset promptsUsed if upgrading from FREE to PRO
-    if (isUpgradingToPro && updatedSubscription.plan === SubscriptionPlan.PRO) {
+    // Reset promptsUsed if upgrading from FREE to any paid plan
+    if (
+      isUpgradingFromFree &&
+      (updatedSubscription.plan === SubscriptionPlan.PRO ||
+        updatedSubscription.plan === SubscriptionPlan.THREE_DAY_PASS ||
+        updatedSubscription.plan === SubscriptionPlan.SEVEN_DAY_PASS ||
+        updatedSubscription.plan === SubscriptionPlan.MONTHLY_UNLIMITED)
+    ) {
       try {
         await this.promptUsageService.resetPromptsUsed(user.id);
         this.logger.log(
-          `Reset promptsUsed for user ${user.id} on PRO upgrade via Paystack`,
+          `Reset promptsUsed for user ${user.id} on plan upgrade via Paystack`,
         );
       } catch (error) {
         this.logger.warn(
@@ -1016,9 +1276,10 @@ export class SubscriptionsService {
       }
     }
 
-    // Send PRO welcome email if subscription is now PRO and ACTIVE
+    // Send PRO welcome email if subscription is now PRO or Monthly Unlimited and ACTIVE
     if (
-      updatedSubscription.plan === SubscriptionPlan.PRO &&
+      (updatedSubscription.plan === SubscriptionPlan.PRO ||
+        updatedSubscription.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
       updatedSubscription.status === SubscriptionStatus.ACTIVE &&
       user.email
     ) {

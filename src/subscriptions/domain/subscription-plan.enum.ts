@@ -1,4 +1,7 @@
 export enum SubscriptionPlan {
   FREE = 'FREE',
   PRO = 'PRO',
+  THREE_DAY_PASS = 'THREE_DAY_PASS',
+  SEVEN_DAY_PASS = 'SEVEN_DAY_PASS',
+  MONTHLY_UNLIMITED = 'MONTHLY_UNLIMITED',
 }
