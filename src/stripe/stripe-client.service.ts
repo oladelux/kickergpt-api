@@ -157,9 +157,17 @@ export class StripeClientService {
 
       await this.subscriptionsService.updateUserSubscription(userId, payload);
 
-      // Send PRO welcome email if subscription is now PRO and ACTIVE
+      // Send welcome email for all paid plans
+      const paidPlans = [
+        SubscriptionPlan.THREE_DAY_PASS,
+        SubscriptionPlan.SEVEN_DAY_PASS,
+        SubscriptionPlan.MONTHLY_UNLIMITED,
+        SubscriptionPlan.PRO,
+      ];
+
       if (
-        payload.plan === SubscriptionPlan.PRO &&
+        payload.plan &&
+        paidPlans.includes(payload.plan) &&
         payload.status === SubscriptionStatus.ACTIVE &&
         user.email
       ) {
@@ -169,11 +177,15 @@ export class StripeClientService {
           await this.mailService.sendProWelcomeEmail({
             to: user.email,
             name: userName,
+            plan: payload.plan,
+            countryCode: user.countryCode,
           });
-          this.logger.log(`PRO welcome email sent to ${user.email}`);
+          this.logger.log(
+            `${payload.plan} welcome email sent to ${user.email}`,
+          );
         } catch (error) {
           this.logger.warn(
-            `Failed to send PRO welcome email to ${user.email}: ${error}`,
+            `Failed to send ${payload.plan} welcome email to ${user.email}: ${error}`,
           );
           // Don't throw - email failure shouldn't break subscription flow
         }

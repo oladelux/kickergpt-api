@@ -1276,10 +1276,16 @@ export class SubscriptionsService {
       }
     }
 
-    // Send PRO welcome email if subscription is now PRO or Monthly Unlimited and ACTIVE
+    // Send welcome email for all paid plans (3-Day Pass, 7-Day Pass, Monthly Unlimited, PRO)
+    const paidPlans = [
+      SubscriptionPlan.THREE_DAY_PASS,
+      SubscriptionPlan.SEVEN_DAY_PASS,
+      SubscriptionPlan.MONTHLY_UNLIMITED,
+      SubscriptionPlan.PRO,
+    ];
+
     if (
-      (updatedSubscription.plan === SubscriptionPlan.PRO ||
-        updatedSubscription.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
+      paidPlans.includes(updatedSubscription.plan) &&
       updatedSubscription.status === SubscriptionStatus.ACTIVE &&
       user.email
     ) {
@@ -1289,11 +1295,15 @@ export class SubscriptionsService {
         await this.mailService.sendProWelcomeEmail({
           to: user.email,
           name: userName,
+          plan: updatedSubscription.plan,
+          countryCode: user.countryCode,
         });
-        this.logger.log(`PRO welcome email sent to ${user.email}`);
+        this.logger.log(
+          `${updatedSubscription.plan} welcome email sent to ${user.email}`,
+        );
       } catch (error) {
         this.logger.warn(
-          `Failed to send PRO welcome email to ${user.email}: ${error}`,
+          `Failed to send ${updatedSubscription.plan} welcome email to ${user.email}: ${error}`,
         );
         // Don't throw - email failure shouldn't break subscription flow
       }

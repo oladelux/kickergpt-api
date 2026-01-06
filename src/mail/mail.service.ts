@@ -737,6 +737,8 @@ export class MailService {
   async sendProWelcomeEmail(params: {
     to: string;
     name?: string;
+    plan?: string;
+    countryCode?: string | null;
     appUrl?: string;
     unsubscribeUrl?: string;
   }): Promise<void> {
@@ -756,6 +758,73 @@ export class MailService {
         infer: true,
       })}/unsubscribe`;
 
+    const plan = params.plan || 'PRO';
+    const isNigerian = params.countryCode?.toUpperCase() === 'NG';
+
+    // Determine plan details
+    let planName: string;
+    let planDuration: string;
+    let promptsDescription: string;
+    let features: string[];
+
+    switch (plan) {
+      case 'THREE_DAY_PASS':
+        planName = '3-Day Pass';
+        planDuration = 'for 3 days';
+        promptsDescription = isNigerian
+          ? 'Unlimited AI prompts for 3 days'
+          : 'Unlimited prompts for 3 days';
+        features = [
+          'Unlimited AI prompts for 3 days',
+          'Ad-free experience',
+          'Priority chat throughput',
+          'Email support from the team',
+        ];
+        break;
+      case 'SEVEN_DAY_PASS':
+        planName = '7-Day Pass';
+        planDuration = 'for 7 days';
+        promptsDescription = isNigerian
+          ? 'Unlimited AI prompts for 7 days'
+          : 'Unlimited prompts for 7 days';
+        features = [
+          'Unlimited AI prompts for 7 days',
+          'Ad-free experience',
+          'Priority chat throughput',
+          'Email support from the team',
+        ];
+        break;
+      case 'MONTHLY_UNLIMITED':
+        planName = 'Monthly Unlimited';
+        planDuration = 'per month';
+        promptsDescription = isNigerian
+          ? 'Unlimited AI prompts each month'
+          : 'Unlimited prompts each month';
+        features = [
+          'Unlimited AI prompts each month',
+          'AI-powered match predictions',
+          'Ad-free experience',
+          'Priority chat throughput',
+          'Email support from the team',
+          'Strategy analysis feature',
+        ];
+        break;
+      case 'PRO':
+      default:
+        planName = 'PRO';
+        planDuration = 'per month';
+        promptsDescription = isNigerian
+          ? 'Unlimited prompts'
+          : '100 Prompts Per Month';
+        features = [
+          'Unlimited Predictions',
+          isNigerian ? 'Unlimited prompts' : '100 Prompts Per Month',
+          'Exclusive Features',
+          'Priority Support',
+        ];
+        break;
+    }
+
     const templatePath = path.join(
       this.configService.getOrThrow('app.workingDirectory', {
         infer: true,
@@ -766,33 +835,28 @@ export class MailService {
       'pro-welcome.hbs',
     );
 
+    const subject = `Welcome to KickerGPT ${planName}! 🎉`;
+
     const textBody = [
       `Hey ${name},`,
       '',
-      'Welcome to KickerGPT PRO! 🎉',
+      `Welcome to KickerGPT ${planName}! 🎉`,
       '',
-      "Thank you for upgrading. You now have access to the full power of KickerGPT. Here's what you can do:",
+      `Thank you for upgrading. You now have access to the full power of KickerGPT ${planDuration}. Here's what you can do:`,
       '',
-      '⭐ PRO Benefits',
+      `⭐ ${planName} Benefits`,
       '',
-      '🎯 Unlimited Predictions',
-      'Get access to all high-confidence match predictions - no limits! While free users see 5 predictions, you get everything.',
-      '',
-      '💬 100 Prompts Per Month',
-      'Ask unlimited questions about matches, teams, players, and more. Get deep insights with 10x more prompts than the free plan.',
-      '',
-      '🚀 Exclusive Features',
-      'Access to all premium features and priority support. More exclusive features coming soon!',
+      ...features.map((feature) => `✅ ${feature}`),
       '',
       '💡 Getting Started',
       '1. Check Your Predictions',
       "Visit the Predictions section to see today's high-confidence match predictions.",
       '',
       '2. Ask Deep Questions',
-      'Use your 100 monthly prompts to dive deep into match analysis, team strategies, and player insights.',
+      `Use your ${promptsDescription.toLowerCase()} to dive deep into match analysis, team strategies, and player insights.`,
       '',
       '3. Explore All Features',
-      'Take advantage of extended match access, detailed analysis, and all PRO-exclusive features.',
+      'Take advantage of extended match access, detailed analysis, and all premium features.',
       '',
       `Open KickerGPT: ${appUrl}`,
       '',
@@ -805,7 +869,7 @@ export class MailService {
 
     await this.mailerService.sendMail({
       to: params.to,
-      subject: 'Welcome to KickerGPT PRO! 🎉',
+      subject,
       text: textBody,
       templatePath,
       headers: {
@@ -813,6 +877,10 @@ export class MailService {
       },
       context: {
         name,
+        planName,
+        planDuration,
+        promptsDescription,
+        features,
         appUrl,
         unsubscribeUrl,
       },
