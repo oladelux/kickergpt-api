@@ -49,7 +49,7 @@ export class AdminMetricsService {
       this.fixtureChatRepository.count(),
       this.subscriptionRepository.count({
         where: {
-          plan: SubscriptionPlan.PRO,
+          plan: In([SubscriptionPlan.PRO, SubscriptionPlan.MONTHLY_UNLIMITED]),
           status: SubscriptionStatus.ACTIVE,
         },
       }),
@@ -125,7 +125,8 @@ export class AdminMetricsService {
     for (const usage of usages) {
       const sub = subscriptionByUserId.get(usage.userId);
       const allowance =
-        sub?.plan === SubscriptionPlan.PRO &&
+        (sub?.plan === SubscriptionPlan.PRO ||
+          sub?.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
         sub?.status === SubscriptionStatus.ACTIVE
           ? 100
           : 10;
