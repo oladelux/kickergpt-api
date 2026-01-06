@@ -49,4 +49,43 @@ export class PromptUsageRelationalRepository implements PromptUsageRepository {
   async deleteByUserId(userId: string): Promise<void> {
     await this.repository.delete({ userId });
   }
+
+  async findOrCreate(data: {
+    userId: string;
+    periodStart: Date;
+  }): Promise<PromptUsage> {
+    // Try to find existing record first
+    let entity = await this.repository.findOne({
+      where: { userId: data.userId },
+    });
+
+    if (entity) {
+      return PromptUsageMapper.toDomain(entity);
+    }
+
+    // If not found, try to create - handle race condition with try-catch
+    try {
+      const newEntity = this.repository.create({
+        userId: data.userId,
+        periodStart: data.periodStart,
+      });
+      const saved = await this.repository.save(newEntity);
+      return PromptUsageMapper.toDomain(saved);
+    } catch (error) {
+      // Handle race condition: if another request created the record
+      // between our check and create, retry finding it
+      const errorCode = (error as { code?: string })?.code;
+      if (errorCode === '23505') {
+        // PostgreSQL unique violation - record was created by another request
+        entity = await this.repository.findOne({
+          where: { userId: data.userId },
+        });
+        if (entity) {
+          return PromptUsageMapper.toDomain(entity);
+        }
+      }
+      // Re-throw if it's not a duplicate key error or we still can't find the record
+      throw error;
+    }
+  }
 }

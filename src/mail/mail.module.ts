@@ -7,6 +7,7 @@ import { BulkUserEmailScheduler } from './schedulers/bulk-user-email.scheduler';
 import { ExhaustedUsersEmailScheduler } from './schedulers/exhausted-users-email.scheduler';
 import { StrategiesAnnouncementEmailScheduler } from './schedulers/strategies-announcement-email.scheduler';
 import { ProPriceChangeEmailScheduler } from './schedulers/pro-price-change-email.scheduler';
+import { NigerianPricingUpdateScheduler } from './schedulers/nigerian-pricing-update.scheduler';
 import { UserEntity } from '../users/infrastructure/persistence/relational/entities/user.entity';
 import { SubscriptionEntity } from '../subscriptions/infrastructure/persistence/relational/entities/subscription.entity';
 import { PromptUsageEntity } from '../prompt-usage/infrastructure/persistence/relational/entities/prompt-usage.entity';
@@ -29,6 +30,7 @@ import { PromptUsageModule } from '../prompt-usage/prompt-usage.module';
     ExhaustedUsersEmailScheduler,
     StrategiesAnnouncementEmailScheduler,
     ProPriceChangeEmailScheduler,
+    NigerianPricingUpdateScheduler,
   ],
   exports: [MailService],
 })
