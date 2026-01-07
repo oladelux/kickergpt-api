@@ -1,9 +1,16 @@
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  Logger,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { PromptUsageRepository } from './infrastructure/persistence/prompt-usage.repository';
 import { PromptUsage } from './domain/prompt-usage';
 import { SubscriptionPlan } from '../subscriptions/domain/subscription-plan.enum';
 import { SubscriptionStatus } from '../subscriptions/domain/subscription-status.enum';
 import { UsersService } from '../users/users.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 @Injectable()
 export class PromptUsageService {
@@ -15,6 +22,8 @@ export class PromptUsageService {
   constructor(
     private readonly repository: PromptUsageRepository,
     private readonly usersService: UsersService,
+    @Inject(forwardRef(() => SubscriptionsService))
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   async getUsage(userId: string): Promise<PromptUsage> {
@@ -43,6 +52,13 @@ export class PromptUsageService {
     const user = await this.usersService.findById(params.userId);
     const countryCode = user?.countryCode;
 
+    // Check if user has an active time-limited plan (3-day or 7-day) within their period
+    const isTimeLimitedUnlimited = await this.isTimeLimitedPlanActive(
+      params.userId,
+      params.plan,
+      params.status,
+    );
+
     // Check if user is Nigerian with unlimited prompts (PRO or MONTHLY_UNLIMITED)
     const isNigerianUnlimited =
       countryCode?.toUpperCase() === 'NG' &&
@@ -64,8 +80,9 @@ export class PromptUsageService {
       usage.addonCredits +
       monthlyRemaining;
 
-    // Skip limit check for Nigerian unlimited users (PRO or MONTHLY_UNLIMITED)
-    if (!isNigerianUnlimited && totalAvailable < amount) {
+    // Skip limit check for unlimited users (Nigerian PRO/MONTHLY_UNLIMITED or active time-limited plans)
+    const isUnlimited = isNigerianUnlimited || isTimeLimitedUnlimited;
+    if (!isUnlimited && totalAvailable < amount) {
       throw new ForbiddenException({
         message: 'promptLimitReached',
       });
@@ -101,7 +118,7 @@ export class PromptUsageService {
 
     // 4. Consume monthly allowance (or track usage for unlimited users)
     if (remaining > 0) {
-      if (isNigerianUnlimited) {
+      if (isUnlimited) {
         // For unlimited users, always track usage even without consuming from allowance
         updates.promptsUsed = usage.promptsUsed + remaining;
         remaining = 0;
@@ -186,12 +203,21 @@ export class PromptUsageService {
       }
     }
 
+    // Check if user has an active time-limited plan (3-day or 7-day) within their period
+    const isTimeLimitedUnlimited = await this.isTimeLimitedPlanActive(
+      params.userId,
+      params.plan,
+      params.status,
+    );
+
     // Check if user is Nigerian with unlimited prompts (PRO or MONTHLY_UNLIMITED)
     const isNigerianUnlimited =
       countryCode?.toUpperCase() === 'NG' &&
       (params.plan === SubscriptionPlan.PRO ||
         params.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
       params.status === SubscriptionStatus.ACTIVE;
+
+    const isUnlimited = isNigerianUnlimited || isTimeLimitedUnlimited;
 
     const allowance = this.getMonthlyAllowance(
       params.plan,
@@ -215,7 +241,7 @@ export class PromptUsageService {
       purchasedCreditsRemaining: purchasedCredits,
       addonCreditsRemaining: addonCredits,
       totalCreditsRemaining,
-      isUnlimited: isNigerianUnlimited,
+      isUnlimited,
     };
   }
 
@@ -287,6 +313,48 @@ export class PromptUsageService {
   private calculateCurrentPeriodStart(): Date {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+
+  /**
+   * Check if user has an active time-limited plan (3-day or 7-day) that's still within their period
+   */
+  private async isTimeLimitedPlanActive(
+    userId: string,
+    plan: SubscriptionPlan,
+    status: SubscriptionStatus,
+  ): Promise<boolean> {
+    // Only check for time-limited plans
+    if (
+      plan !== SubscriptionPlan.THREE_DAY_PASS &&
+      plan !== SubscriptionPlan.SEVEN_DAY_PASS
+    ) {
+      return false;
+    }
+
+    // Must be active
+    if (status !== SubscriptionStatus.ACTIVE) {
+      return false;
+    }
+
+    // Fetch subscription to check currentPeriodEnd
+    try {
+      const subscription =
+        await this.subscriptionsService.getSubscriptionForUser(userId);
+
+      // Check if period hasn't ended yet
+      if (
+        subscription.currentPeriodEnd &&
+        subscription.currentPeriodEnd > new Date()
+      ) {
+        return true;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to fetch subscription for user ${userId}: ${error}`,
+      );
+    }
+
+    return false;
   }
 
   async deleteByUserId(userId: string): Promise<void> {

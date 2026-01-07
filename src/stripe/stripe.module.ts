@@ -12,7 +12,7 @@ import { MailModule } from '../mail/mail.module';
     forwardRef(() => SubscriptionsModule),
     UsersModule,
     ConfigModule,
-    MailModule,
+    forwardRef(() => MailModule),
   ],
   providers: [StripeClientService],
   exports: [StripeClientService],

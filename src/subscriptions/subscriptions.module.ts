@@ -14,10 +14,10 @@ import { MailModule } from '../mail/mail.module';
   imports: [
     RelationalSubscriptionPersistenceModule,
     UsersModule,
+    forwardRef(() => MailModule),
     forwardRef(() => StripeModule),
     PaystackModule,
-    PromptUsageModule,
-    MailModule,
+    forwardRef(() => PromptUsageModule),
     JwtModule.register({}),
   ],
   controllers: [SubscriptionsController, StripeWebhookController],
