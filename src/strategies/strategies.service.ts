@@ -33,18 +33,19 @@ export class StrategiesService {
   ) {}
 
   /**
-   * Verify user has active PRO subscription
+   * Verify user has active PRO or MONTHLY_UNLIMITED subscription
    */
   private async verifyProSubscription(userId: string): Promise<void> {
     const subscription = await this.subscriptionsService.findByUserId(userId);
 
     if (
       !subscription ||
-      subscription.plan !== SubscriptionPlan.PRO ||
+      (subscription.plan !== SubscriptionPlan.PRO &&
+        subscription.plan !== SubscriptionPlan.MONTHLY_UNLIMITED) ||
       subscription.status !== SubscriptionStatus.ACTIVE
     ) {
       throw new ForbiddenException(
-        'Strategy feature is only available for PRO users',
+        'Strategy feature is only available for PRO or Monthly Unlimited users',
       );
     }
   }
