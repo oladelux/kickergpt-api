@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository, In, Between, ILike, LessThanOrEqual } from 'typeorm';
+import { Repository, In, Between, LessThanOrEqual } from 'typeorm';
 import Stripe from 'stripe';
 import { UserEntity } from '../users/infrastructure/persistence/relational/entities/user.entity';
 import { SubscriptionEntity } from '../subscriptions/infrastructure/persistence/relational/entities/subscription.entity';
@@ -270,7 +270,7 @@ export class AdminService {
     try {
       const price = await this.stripeClient.prices.retrieve(priceId);
       return (price.unit_amount ?? 0) / 100; // Convert from cents to dollars
-    } catch (error) {
+    } catch {
       // If we can't fetch, return 0 or a default
       return 0;
     }
