@@ -23,6 +23,7 @@ import {
   RevenueByPlanDto,
   NigerianFinancialMetricsDto,
   NonNigerianFinancialMetricsDto,
+  TimeLimitedRevenueDto,
 } from './dto/financial-metrics.dto';
 import {
   SubscriptionListItemDto,
@@ -266,6 +267,50 @@ export class AdminService {
 
   // Financial Metrics Methods
 
+  private getCurrencyByCountry(countryCode?: string | null): string {
+    if (!countryCode) {
+      return 'USD';
+    }
+
+    const normalizedCountry = countryCode.toUpperCase();
+
+    if (normalizedCountry === 'NG') {
+      return 'NGN';
+    }
+
+    if (normalizedCountry === 'GB') {
+      return 'GBP';
+    }
+
+    const europeanCountries = [
+      'AT',
+      'BE',
+      'CY',
+      'EE',
+      'FI',
+      'FR',
+      'DE',
+      'GR',
+      'IE',
+      'IT',
+      'LV',
+      'LT',
+      'LU',
+      'MT',
+      'NL',
+      'PT',
+      'SK',
+      'SI',
+      'ES',
+    ];
+
+    if (europeanCountries.includes(normalizedCountry)) {
+      return 'EUR';
+    }
+
+    return 'USD';
+  }
+
   private async getStripePrice(priceId: string): Promise<number> {
     try {
       const price = await this.stripeClient.prices.retrieve(priceId);
@@ -289,54 +334,79 @@ export class AdminService {
     }
   }
 
-  private async calculateSubscriptionMrr(
+  private async calculateSubscriptionRevenue(
     subscription: SubscriptionEntity,
     user: UserEntity,
-  ): Promise<number> {
+  ): Promise<{
+    recurringMrr: number;
+    totalMonthlyRevenue: number;
+    isRecurring: boolean;
+  }> {
     if (subscription.status !== SubscriptionStatus.ACTIVE) {
-      return 0;
+      return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
     }
 
     const countryCode = user.countryCode?.toUpperCase();
 
     switch (subscription.plan) {
       case SubscriptionPlan.FREE:
-        return 0;
+        return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
 
       case SubscriptionPlan.PRO:
         // Get price from Stripe based on country
         const priceId = this.getPriceIdByCountry(countryCode);
         const price = await this.getStripePrice(priceId);
-        return price;
+        return {
+          recurringMrr: price,
+          totalMonthlyRevenue: price,
+          isRecurring: true,
+        };
 
       case SubscriptionPlan.MONTHLY_UNLIMITED:
         if (countryCode === 'NG') {
-          return this.getNigerianPlanPrice(SubscriptionPlan.MONTHLY_UNLIMITED);
+          const price = this.getNigerianPlanPrice(
+            SubscriptionPlan.MONTHLY_UNLIMITED,
+          );
+          return {
+            recurringMrr: price,
+            totalMonthlyRevenue: price,
+            isRecurring: true,
+          };
         }
         // For non-NG, we'd need to get from Stripe or use a default
         // For now, return 0 or fetch from Stripe if available
-        return 0;
+        return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
 
       case SubscriptionPlan.THREE_DAY_PASS:
         if (countryCode === 'NG') {
           const price = this.getNigerianPlanPrice(
             SubscriptionPlan.THREE_DAY_PASS,
           );
-          return (price / 3) * 30; // Prorate to monthly
+          const proratedMonthly = (price / 3) * 30; // Prorate to monthly
+          return {
+            recurringMrr: 0, // Not recurring
+            totalMonthlyRevenue: proratedMonthly,
+            isRecurring: false,
+          };
         }
-        return 0;
+        return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
 
       case SubscriptionPlan.SEVEN_DAY_PASS:
         if (countryCode === 'NG') {
           const price = this.getNigerianPlanPrice(
             SubscriptionPlan.SEVEN_DAY_PASS,
           );
-          return (price / 7) * 30; // Prorate to monthly
+          const proratedMonthly = (price / 7) * 30; // Prorate to monthly
+          return {
+            recurringMrr: 0, // Not recurring
+            totalMonthlyRevenue: proratedMonthly,
+            isRecurring: false,
+          };
         }
-        return 0;
+        return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
 
       default:
-        return 0;
+        return { recurringMrr: 0, totalMonthlyRevenue: 0, isRecurring: false };
     }
   }
 
@@ -414,46 +484,102 @@ export class AdminService {
       relations: ['user'],
     });
 
-    const mrrByCountry = new Map<string, number>();
-    const arrByCountry = new Map<string, number>();
+    const recurringMrrByCountry = new Map<string, number>();
+    const totalRevenueByCountry = new Map<string, number>();
+    const timeLimitedRevenueByCountry = new Map<string, number>();
     const countByCountry = new Map<string, number>();
-    const mrrByPlan = new Map<SubscriptionPlan, number>();
-    const arrByPlan = new Map<SubscriptionPlan, number>();
+    const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+    const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
+    const timeLimitedRevenueByPlan = new Map<SubscriptionPlan, number>();
     const countByPlan = new Map<SubscriptionPlan, number>();
+    const timeLimitedCountByPlan = new Map<SubscriptionPlan, number>();
 
-    let totalMrr = 0;
+    let totalRecurringMrr = 0;
+    let totalMonthlyRevenue = 0;
+    let totalTimeLimitedRevenue = 0;
 
     for (const subscription of activeSubscriptions) {
       const user = subscription.user;
       const countryKey = user?.countryCode ?? 'UNKNOWN';
-      const mrr = await this.calculateSubscriptionMrr(subscription, user);
+      const revenue = await this.calculateSubscriptionRevenue(
+        subscription,
+        user,
+      );
 
-      totalMrr += mrr;
+      totalRecurringMrr += revenue.recurringMrr;
+      totalMonthlyRevenue += revenue.totalMonthlyRevenue;
+      if (!revenue.isRecurring) {
+        totalTimeLimitedRevenue += revenue.totalMonthlyRevenue;
+      }
 
       // By country
-      const currentMrr = mrrByCountry.get(countryKey) ?? 0;
-      mrrByCountry.set(countryKey, currentMrr + mrr);
-      arrByCountry.set(countryKey, (currentMrr + mrr) * 12);
+      const currentRecurringMrr = recurringMrrByCountry.get(countryKey) ?? 0;
+      const currentTotalRevenue = totalRevenueByCountry.get(countryKey) ?? 0;
+      recurringMrrByCountry.set(
+        countryKey,
+        currentRecurringMrr + revenue.recurringMrr,
+      );
+      totalRevenueByCountry.set(
+        countryKey,
+        currentTotalRevenue + revenue.totalMonthlyRevenue,
+      );
+      if (!revenue.isRecurring) {
+        const currentTimeLimited =
+          timeLimitedRevenueByCountry.get(countryKey) ?? 0;
+        timeLimitedRevenueByCountry.set(
+          countryKey,
+          currentTimeLimited + revenue.totalMonthlyRevenue,
+        );
+      }
       countByCountry.set(countryKey, (countByCountry.get(countryKey) ?? 0) + 1);
 
       // By plan
-      const currentPlanMrr = mrrByPlan.get(subscription.plan) ?? 0;
-      mrrByPlan.set(subscription.plan, currentPlanMrr + mrr);
-      arrByPlan.set(subscription.plan, (currentPlanMrr + mrr) * 12);
+      const currentPlanRecurringMrr =
+        recurringMrrByPlan.get(subscription.plan) ?? 0;
+      const currentPlanTotalRevenue =
+        totalRevenueByPlan.get(subscription.plan) ?? 0;
+      recurringMrrByPlan.set(
+        subscription.plan,
+        currentPlanRecurringMrr + revenue.recurringMrr,
+      );
+      totalRevenueByPlan.set(
+        subscription.plan,
+        currentPlanTotalRevenue + revenue.totalMonthlyRevenue,
+      );
+      if (!revenue.isRecurring) {
+        const currentTimeLimited =
+          timeLimitedRevenueByPlan.get(subscription.plan) ?? 0;
+        timeLimitedRevenueByPlan.set(
+          subscription.plan,
+          currentTimeLimited + revenue.totalMonthlyRevenue,
+        );
+        timeLimitedCountByPlan.set(
+          subscription.plan,
+          (timeLimitedCountByPlan.get(subscription.plan) ?? 0) + 1,
+        );
+      }
       countByPlan.set(
         subscription.plan,
         (countByPlan.get(subscription.plan) ?? 0) + 1,
       );
     }
 
-    const byCountryPromises = Array.from(mrrByCountry.entries()).map(
-      async ([countryCode, mrr]) => {
-        const arr = arrByCountry.get(countryCode) ?? 0;
+    const byCountryPromises = Array.from(recurringMrrByCountry.entries()).map(
+      async ([countryCode, recurringMrr]) => {
+        const totalRevenue = totalRevenueByCountry.get(countryCode) ?? 0;
+        const timeLimitedRevenue =
+          timeLimitedRevenueByCountry.get(countryCode) ?? 0;
         const count = countByCountry.get(countryCode) ?? 0;
+        const currency = this.getCurrencyByCountry(
+          countryCode === 'UNKNOWN' ? null : countryCode,
+        );
 
         // Get plan breakdown for this country
-        const planBreakdown = new Map<SubscriptionPlan, number>();
+        const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+        const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
+        const timeLimitedRevenueByPlan = new Map<SubscriptionPlan, number>();
         const planCounts = new Map<SubscriptionPlan, number>();
+        const timeLimitedCounts = new Map<SubscriptionPlan, number>();
 
         const countrySubscriptions = activeSubscriptions.filter(
           (sub) =>
@@ -462,48 +588,127 @@ export class AdminService {
         );
 
         for (const sub of countrySubscriptions) {
-          const subMrr = await this.calculateSubscriptionMrr(sub, sub.user);
-          const current = planBreakdown.get(sub.plan) ?? 0;
-          planBreakdown.set(sub.plan, current + subMrr);
+          const subRevenue = await this.calculateSubscriptionRevenue(
+            sub,
+            sub.user,
+          );
+          const currentRecurring = recurringMrrByPlan.get(sub.plan) ?? 0;
+          const currentTotal = totalRevenueByPlan.get(sub.plan) ?? 0;
+          recurringMrrByPlan.set(
+            sub.plan,
+            currentRecurring + subRevenue.recurringMrr,
+          );
+          totalRevenueByPlan.set(
+            sub.plan,
+            currentTotal + subRevenue.totalMonthlyRevenue,
+          );
+          if (!subRevenue.isRecurring) {
+            const currentTimeLimited =
+              timeLimitedRevenueByPlan.get(sub.plan) ?? 0;
+            timeLimitedRevenueByPlan.set(
+              sub.plan,
+              currentTimeLimited + subRevenue.totalMonthlyRevenue,
+            );
+            timeLimitedCounts.set(
+              sub.plan,
+              (timeLimitedCounts.get(sub.plan) ?? 0) + 1,
+            );
+          }
           planCounts.set(sub.plan, (planCounts.get(sub.plan) ?? 0) + 1);
         }
 
         const byPlan: RevenueByPlanDto[] = Array.from(
-          planBreakdown.entries(),
-        ).map(([plan, planMrr]) => ({
-          plan,
-          mrr: planMrr,
-          arr: planMrr * 12,
-          activeSubscriptions: planCounts.get(plan) ?? 0,
-        }));
+          recurringMrrByPlan.entries(),
+        ).map(([plan, planRecurringMrr]) => {
+          const planTotalRevenue = totalRevenueByPlan.get(plan) ?? 0;
+          return {
+            plan,
+            mrr: planRecurringMrr,
+            arr: planRecurringMrr * 12,
+            totalMonthlyRevenue: planTotalRevenue,
+            totalAnnualRevenue: planTotalRevenue * 12,
+            activeSubscriptions: planCounts.get(plan) ?? 0,
+            currency,
+          };
+        });
+
+        const timeLimitedRevenueDto: TimeLimitedRevenueDto | null =
+          timeLimitedRevenue > 0
+            ? {
+                monthlyRevenue: timeLimitedRevenue,
+                annualRevenue: timeLimitedRevenue * 12,
+                activeSubscriptions: Array.from(
+                  timeLimitedCounts.values(),
+                ).reduce((sum, count) => sum + count, 0),
+                currency,
+              }
+            : null;
 
         return {
           countryCode: countryCode === 'UNKNOWN' ? null : countryCode,
-          mrr,
-          arr,
+          mrr: recurringMrr,
+          arr: recurringMrr * 12,
+          totalMonthlyRevenue,
+          totalAnnualRevenue: totalRevenue * 12,
           activeSubscriptions: count,
+          currency,
           byPlan,
+          timeLimitedRevenue: timeLimitedRevenueDto,
         };
       },
     );
 
     const byCountry = await Promise.all(byCountryPromises);
 
-    const byPlan: RevenueByPlanDto[] = Array.from(mrrByPlan.entries()).map(
-      ([plan, mrr]) => ({
+    const byPlan: RevenueByPlanDto[] = Array.from(
+      recurringMrrByPlan.entries(),
+    ).map(([plan, recurringMrr]) => {
+      const totalRevenue = totalRevenueByPlan.get(plan) ?? 0;
+      // Determine currency based on plan (most plans are country-specific)
+      let currency = 'USD';
+      if (
+        plan === SubscriptionPlan.THREE_DAY_PASS ||
+        plan === SubscriptionPlan.SEVEN_DAY_PASS ||
+        plan === SubscriptionPlan.MONTHLY_UNLIMITED
+      ) {
+        // These are primarily Nigerian plans
+        currency = 'NGN';
+      } else if (plan === SubscriptionPlan.PRO) {
+        // PRO can be multiple currencies, default to USD
+        currency = 'USD';
+      }
+      return {
         plan,
-        mrr,
-        arr: arrByPlan.get(plan) ?? 0,
+        mrr: recurringMrr,
+        arr: recurringMrr * 12,
+        totalMonthlyRevenue: totalRevenue,
+        totalAnnualRevenue: totalRevenue * 12,
         activeSubscriptions: countByPlan.get(plan) ?? 0,
-      }),
-    );
+        currency,
+      };
+    });
+
+    const totalTimeLimitedRevenueDto: TimeLimitedRevenueDto | null =
+      totalTimeLimitedRevenue > 0
+        ? {
+            monthlyRevenue: totalTimeLimitedRevenue,
+            annualRevenue: totalTimeLimitedRevenue * 12,
+            activeSubscriptions: Array.from(
+              timeLimitedCountByPlan.values(),
+            ).reduce((sum, count) => sum + count, 0),
+            currency: 'NGN', // Time-limited passes are primarily Nigerian
+          }
+        : null;
 
     return {
-      totalMrr,
-      totalArr: totalMrr * 12,
+      totalMrr: totalRecurringMrr,
+      totalArr: totalRecurringMrr * 12,
+      totalMonthlyRevenue,
+      totalAnnualRevenue: totalMonthlyRevenue * 12,
       totalActiveSubscriptions: activeSubscriptions.length,
       byCountry,
       byPlan,
+      totalTimeLimitedRevenue: totalTimeLimitedRevenueDto,
     };
   }
 
@@ -530,39 +735,90 @@ export class AdminService {
       (sub) => sub.user?.countryCode?.toUpperCase() === 'NG',
     );
 
-    const mrrByPlan = new Map<SubscriptionPlan, number>();
+    const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+    const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
+    const timeLimitedRevenueByPlan = new Map<SubscriptionPlan, number>();
     const countByPlan = new Map<SubscriptionPlan, number>();
-    let totalMrr = 0;
+    const timeLimitedCountByPlan = new Map<SubscriptionPlan, number>();
+    let totalRecurringMrr = 0;
+    let totalMonthlyRevenue = 0;
+    let totalTimeLimitedRevenue = 0;
 
     for (const subscription of nigerianSubscriptions) {
-      const mrr = await this.calculateSubscriptionMrr(
+      const revenue = await this.calculateSubscriptionRevenue(
         subscription,
         subscription.user,
       );
-      totalMrr += mrr;
+      totalRecurringMrr += revenue.recurringMrr;
+      totalMonthlyRevenue += revenue.totalMonthlyRevenue;
+      if (!revenue.isRecurring) {
+        totalTimeLimitedRevenue += revenue.totalMonthlyRevenue;
+      }
 
-      const current = mrrByPlan.get(subscription.plan) ?? 0;
-      mrrByPlan.set(subscription.plan, current + mrr);
+      const currentRecurring = recurringMrrByPlan.get(subscription.plan) ?? 0;
+      const currentTotal = totalRevenueByPlan.get(subscription.plan) ?? 0;
+      recurringMrrByPlan.set(
+        subscription.plan,
+        currentRecurring + revenue.recurringMrr,
+      );
+      totalRevenueByPlan.set(
+        subscription.plan,
+        currentTotal + revenue.totalMonthlyRevenue,
+      );
+      if (!revenue.isRecurring) {
+        const currentTimeLimited =
+          timeLimitedRevenueByPlan.get(subscription.plan) ?? 0;
+        timeLimitedRevenueByPlan.set(
+          subscription.plan,
+          currentTimeLimited + revenue.totalMonthlyRevenue,
+        );
+        timeLimitedCountByPlan.set(
+          subscription.plan,
+          (timeLimitedCountByPlan.get(subscription.plan) ?? 0) + 1,
+        );
+      }
       countByPlan.set(
         subscription.plan,
         (countByPlan.get(subscription.plan) ?? 0) + 1,
       );
     }
 
-    const byPlan: RevenueByPlanDto[] = Array.from(mrrByPlan.entries()).map(
-      ([plan, mrr]) => ({
+    const byPlan: RevenueByPlanDto[] = Array.from(
+      recurringMrrByPlan.entries(),
+    ).map(([plan, recurringMrr]) => {
+      const totalRevenue = totalRevenueByPlan.get(plan) ?? 0;
+      return {
         plan,
-        mrr,
-        arr: mrr * 12,
+        mrr: recurringMrr,
+        arr: recurringMrr * 12,
+        totalMonthlyRevenue: totalRevenue,
+        totalAnnualRevenue: totalRevenue * 12,
         activeSubscriptions: countByPlan.get(plan) ?? 0,
-      }),
-    );
+        currency: 'NGN',
+      };
+    });
+
+    const timeLimitedRevenueDto: TimeLimitedRevenueDto | null =
+      totalTimeLimitedRevenue > 0
+        ? {
+            monthlyRevenue: totalTimeLimitedRevenue,
+            annualRevenue: totalTimeLimitedRevenue * 12,
+            activeSubscriptions: Array.from(
+              timeLimitedCountByPlan.values(),
+            ).reduce((sum, count) => sum + count, 0),
+            currency: 'NGN',
+          }
+        : null;
 
     return {
-      mrr: totalMrr,
-      arr: totalMrr * 12,
+      mrr: totalRecurringMrr,
+      arr: totalRecurringMrr * 12,
+      totalMonthlyRevenue,
+      totalAnnualRevenue: totalMonthlyRevenue * 12,
       activeSubscriptions: nigerianSubscriptions.length,
+      currency: 'NGN',
       byPlan,
+      timeLimitedRevenue: timeLimitedRevenueDto,
     };
   }
 
@@ -584,38 +840,97 @@ export class AdminService {
       (sub) => sub.user?.countryCode?.toUpperCase() !== 'NG',
     );
 
-    const mrrByCountry = new Map<string, number>();
+    const recurringMrrByCountry = new Map<string, number>();
+    const totalRevenueByCountry = new Map<string, number>();
+    const timeLimitedRevenueByCountry = new Map<string, number>();
     const countByCountry = new Map<string, number>();
-    const mrrByPlan = new Map<SubscriptionPlan, number>();
+    const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+    const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
+    const timeLimitedRevenueByPlan = new Map<SubscriptionPlan, number>();
     const countByPlan = new Map<SubscriptionPlan, number>();
-    let totalMrr = 0;
+    const timeLimitedCountByPlan = new Map<SubscriptionPlan, number>();
+    let totalRecurringMrr = 0;
+    let totalMonthlyRevenue = 0;
+    let totalTimeLimitedRevenue = 0;
 
     for (const subscription of nonNigerianSubscriptions) {
-      const mrr = await this.calculateSubscriptionMrr(
+      const revenue = await this.calculateSubscriptionRevenue(
         subscription,
         subscription.user,
       );
-      totalMrr += mrr;
+      totalRecurringMrr += revenue.recurringMrr;
+      totalMonthlyRevenue += revenue.totalMonthlyRevenue;
+      if (!revenue.isRecurring) {
+        totalTimeLimitedRevenue += revenue.totalMonthlyRevenue;
+      }
 
       const countryKey = subscription.user?.countryCode ?? 'UNKNOWN';
-      const currentCountryMrr = mrrByCountry.get(countryKey) ?? 0;
-      mrrByCountry.set(countryKey, currentCountryMrr + mrr);
+      const currentRecurringMrr = recurringMrrByCountry.get(countryKey) ?? 0;
+      const currentTotalRevenue = totalRevenueByCountry.get(countryKey) ?? 0;
+      recurringMrrByCountry.set(
+        countryKey,
+        currentRecurringMrr + revenue.recurringMrr,
+      );
+      totalRevenueByCountry.set(
+        countryKey,
+        currentTotalRevenue + revenue.totalMonthlyRevenue,
+      );
+      if (!revenue.isRecurring) {
+        const currentTimeLimited =
+          timeLimitedRevenueByCountry.get(countryKey) ?? 0;
+        timeLimitedRevenueByCountry.set(
+          countryKey,
+          currentTimeLimited + revenue.totalMonthlyRevenue,
+        );
+      }
       countByCountry.set(countryKey, (countByCountry.get(countryKey) ?? 0) + 1);
 
-      const currentPlanMrr = mrrByPlan.get(subscription.plan) ?? 0;
-      mrrByPlan.set(subscription.plan, currentPlanMrr + mrr);
+      const currentPlanRecurringMrr =
+        recurringMrrByPlan.get(subscription.plan) ?? 0;
+      const currentPlanTotalRevenue =
+        totalRevenueByPlan.get(subscription.plan) ?? 0;
+      recurringMrrByPlan.set(
+        subscription.plan,
+        currentPlanRecurringMrr + revenue.recurringMrr,
+      );
+      totalRevenueByPlan.set(
+        subscription.plan,
+        currentPlanTotalRevenue + revenue.totalMonthlyRevenue,
+      );
+      if (!revenue.isRecurring) {
+        const currentTimeLimited =
+          timeLimitedRevenueByPlan.get(subscription.plan) ?? 0;
+        timeLimitedRevenueByPlan.set(
+          subscription.plan,
+          currentTimeLimited + revenue.totalMonthlyRevenue,
+        );
+        timeLimitedCountByPlan.set(
+          subscription.plan,
+          (timeLimitedCountByPlan.get(subscription.plan) ?? 0) + 1,
+        );
+      }
       countByPlan.set(
         subscription.plan,
         (countByPlan.get(subscription.plan) ?? 0) + 1,
       );
     }
 
-    const byCountryPromises = Array.from(mrrByCountry.entries()).map(
-      async ([countryCode, mrr]) => {
+    const byCountryPromises = Array.from(recurringMrrByCountry.entries()).map(
+      async ([countryCode, recurringMrr]) => {
+        const totalRevenue = totalRevenueByCountry.get(countryCode) ?? 0;
+        const timeLimitedRevenue =
+          timeLimitedRevenueByCountry.get(countryCode) ?? 0;
         const count = countByCountry.get(countryCode) ?? 0;
+        const currency = this.getCurrencyByCountry(
+          countryCode === 'UNKNOWN' ? null : countryCode,
+        );
+
         // Get plan breakdown for this country
-        const planBreakdown = new Map<SubscriptionPlan, number>();
+        const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+        const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
+        const timeLimitedRevenueByPlan = new Map<SubscriptionPlan, number>();
         const planCounts = new Map<SubscriptionPlan, number>();
+        const timeLimitedCounts = new Map<SubscriptionPlan, number>();
 
         const countrySubscriptions = nonNigerianSubscriptions.filter(
           (sub) =>
@@ -624,48 +939,116 @@ export class AdminService {
         );
 
         for (const sub of countrySubscriptions) {
-          const subMrr = await this.calculateSubscriptionMrr(sub, sub.user);
-          const current = planBreakdown.get(sub.plan) ?? 0;
-          planBreakdown.set(sub.plan, current + subMrr);
+          const subRevenue = await this.calculateSubscriptionRevenue(
+            sub,
+            sub.user,
+          );
+          const currentRecurring = recurringMrrByPlan.get(sub.plan) ?? 0;
+          const currentTotal = totalRevenueByPlan.get(sub.plan) ?? 0;
+          recurringMrrByPlan.set(
+            sub.plan,
+            currentRecurring + subRevenue.recurringMrr,
+          );
+          totalRevenueByPlan.set(
+            sub.plan,
+            currentTotal + subRevenue.totalMonthlyRevenue,
+          );
+          if (!subRevenue.isRecurring) {
+            const currentTimeLimited =
+              timeLimitedRevenueByPlan.get(sub.plan) ?? 0;
+            timeLimitedRevenueByPlan.set(
+              sub.plan,
+              currentTimeLimited + subRevenue.totalMonthlyRevenue,
+            );
+            timeLimitedCounts.set(
+              sub.plan,
+              (timeLimitedCounts.get(sub.plan) ?? 0) + 1,
+            );
+          }
           planCounts.set(sub.plan, (planCounts.get(sub.plan) ?? 0) + 1);
         }
 
         const byPlan: RevenueByPlanDto[] = Array.from(
-          planBreakdown.entries(),
-        ).map(([plan, planMrr]) => ({
-          plan,
-          mrr: planMrr,
-          arr: planMrr * 12,
-          activeSubscriptions: planCounts.get(plan) ?? 0,
-        }));
+          recurringMrrByPlan.entries(),
+        ).map(([plan, planRecurringMrr]) => {
+          const planTotalRevenue = totalRevenueByPlan.get(plan) ?? 0;
+          return {
+            plan,
+            mrr: planRecurringMrr,
+            arr: planRecurringMrr * 12,
+            totalMonthlyRevenue: planTotalRevenue,
+            totalAnnualRevenue: planTotalRevenue * 12,
+            activeSubscriptions: planCounts.get(plan) ?? 0,
+            currency,
+          };
+        });
+
+        const timeLimitedRevenueDto: TimeLimitedRevenueDto | null =
+          timeLimitedRevenue > 0
+            ? {
+                monthlyRevenue: timeLimitedRevenue,
+                annualRevenue: timeLimitedRevenue * 12,
+                activeSubscriptions: Array.from(
+                  timeLimitedCounts.values(),
+                ).reduce((sum, count) => sum + count, 0),
+                currency,
+              }
+            : null;
 
         return {
           countryCode: countryCode === 'UNKNOWN' ? null : countryCode,
-          mrr,
-          arr: mrr * 12,
+          mrr: recurringMrr,
+          arr: recurringMrr * 12,
+          totalMonthlyRevenue,
+          totalAnnualRevenue: totalRevenue * 12,
           activeSubscriptions: count,
+          currency,
           byPlan,
+          timeLimitedRevenue: timeLimitedRevenueDto,
         };
       },
     );
 
     const byCountry = await Promise.all(byCountryPromises);
 
-    const byPlan: RevenueByPlanDto[] = Array.from(mrrByPlan.entries()).map(
-      ([plan, mrr]) => ({
+    const byPlan: RevenueByPlanDto[] = Array.from(
+      recurringMrrByPlan.entries(),
+    ).map(([plan, recurringMrr]) => {
+      const totalRevenue = totalRevenueByPlan.get(plan) ?? 0;
+      // Determine currency - PRO can be multiple currencies, default to USD
+      const currency = 'USD';
+      return {
         plan,
-        mrr,
-        arr: mrr * 12,
+        mrr: recurringMrr,
+        arr: recurringMrr * 12,
+        totalMonthlyRevenue: totalRevenue,
+        totalAnnualRevenue: totalRevenue * 12,
         activeSubscriptions: countByPlan.get(plan) ?? 0,
-      }),
-    );
+        currency,
+      };
+    });
+
+    const timeLimitedRevenueDto: TimeLimitedRevenueDto | null =
+      totalTimeLimitedRevenue > 0
+        ? {
+            monthlyRevenue: totalTimeLimitedRevenue,
+            annualRevenue: totalTimeLimitedRevenue * 12,
+            activeSubscriptions: Array.from(
+              timeLimitedCountByPlan.values(),
+            ).reduce((sum, count) => sum + count, 0),
+            currency: 'USD', // Non-Nigerian time-limited (if any)
+          }
+        : null;
 
     return {
-      mrr: totalMrr,
-      arr: totalMrr * 12,
+      mrr: totalRecurringMrr,
+      arr: totalRecurringMrr * 12,
+      totalMonthlyRevenue,
+      totalAnnualRevenue: totalMonthlyRevenue * 12,
       activeSubscriptions: nonNigerianSubscriptions.length,
       byCountry,
       byPlan,
+      timeLimitedRevenue: timeLimitedRevenueDto,
     };
   }
 
@@ -811,28 +1194,39 @@ export class AdminService {
       relations: ['user'],
     });
 
-    const mrrByPlan = new Map<SubscriptionPlan, number>();
+    const recurringMrrByPlan = new Map<SubscriptionPlan, number>();
+    const totalRevenueByPlan = new Map<SubscriptionPlan, number>();
     const countByPlan = new Map<SubscriptionPlan, number>();
 
     for (const subscription of activeSubscriptions) {
-      const mrr = await this.calculateSubscriptionMrr(
+      const revenue = await this.calculateSubscriptionRevenue(
         subscription,
         subscription.user,
       );
-      const current = mrrByPlan.get(subscription.plan) ?? 0;
-      mrrByPlan.set(subscription.plan, current + mrr);
+      const currentRecurring = recurringMrrByPlan.get(subscription.plan) ?? 0;
+      const currentTotal = totalRevenueByPlan.get(subscription.plan) ?? 0;
+      recurringMrrByPlan.set(
+        subscription.plan,
+        currentRecurring + revenue.recurringMrr,
+      );
+      totalRevenueByPlan.set(
+        subscription.plan,
+        currentTotal + revenue.totalMonthlyRevenue,
+      );
       countByPlan.set(
         subscription.plan,
         (countByPlan.get(subscription.plan) ?? 0) + 1,
       );
     }
 
-    return Array.from(mrrByPlan.entries()).map(([plan, mrr]) => ({
-      plan,
-      count: countByPlan.get(plan) ?? 0,
-      mrr,
-      arr: mrr * 12,
-    }));
+    return Array.from(recurringMrrByPlan.entries()).map(
+      ([plan, recurringMrr]) => ({
+        plan,
+        count: countByPlan.get(plan) ?? 0,
+        mrr: recurringMrr,
+        arr: recurringMrr * 12,
+      }),
+    );
   }
 
   async getExpiringSubscriptions(
