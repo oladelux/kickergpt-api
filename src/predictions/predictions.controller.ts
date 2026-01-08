@@ -45,7 +45,7 @@ export class PredictionsController {
   @ApiOperation({
     summary: "Get today's match predictions",
     description:
-      'Returns match probability insights for today. Free users see up to 5 predictions, PRO users see all.',
+      'Returns match probability insights for today. FREE, 3-day, and 7-day plan users see up to 5 predictions. PRO and Monthly Unlimited users see all predictions.',
   })
   @ApiOkResponse({
     description: "Today's predictions successfully retrieved",
@@ -70,15 +70,17 @@ export class PredictionsController {
       };
     }
 
-    // Check if user is PRO subscriber
-    const isProUser = await this.isProSubscriber(request.user?.id);
+    // Check if user has unlimited predictions access (PRO or MONTHLY_UNLIMITED)
+    const hasUnlimitedAccess = await this.hasUnlimitedPredictionsAccess(
+      request.user?.id,
+    );
 
-    // If PRO user, return all predictions
-    if (isProUser) {
+    // If user has unlimited access, return all predictions
+    if (hasUnlimitedAccess) {
       return predictions;
     }
 
-    // For free users, limit to 5 predictions
+    // For FREE, 3-day, and 7-day plan users, limit to 5 predictions
     return {
       ...predictions,
       predictions: predictions.predictions.slice(0, FREE_USER_PREDICTION_LIMIT),
@@ -86,9 +88,13 @@ export class PredictionsController {
   }
 
   /**
-   * Check if the user has an active PRO subscription.
+   * Check if the user has unlimited predictions access.
+   * PRO and MONTHLY_UNLIMITED users have unlimited access to all predictions.
+   * FREE, 3-day, and 7-day plan users are limited to 5 predictions.
    */
-  private async isProSubscriber(userId: string | undefined): Promise<boolean> {
+  private async hasUnlimitedPredictionsAccess(
+    userId: string | undefined,
+  ): Promise<boolean> {
     if (!userId) {
       return false;
     }
@@ -101,7 +107,8 @@ export class PredictionsController {
       }
 
       return (
-        subscription.plan === SubscriptionPlan.PRO &&
+        (subscription.plan === SubscriptionPlan.PRO ||
+          subscription.plan === SubscriptionPlan.MONTHLY_UNLIMITED) &&
         subscription.status === SubscriptionStatus.ACTIVE
       );
     } catch {
