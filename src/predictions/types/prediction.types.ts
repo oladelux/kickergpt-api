@@ -20,22 +20,70 @@ export type PredictionType = 'result';
 export type ConfidenceLevel = 'very high' | 'high' | 'medium' | 'low';
 
 /**
- * The predicted match result.
+ * The predicted match result (including draw).
  */
-export type MatchResult = 'home' | 'away';
+export type MatchResult = 'home' | 'away' | 'draw';
 
 /**
- * A single prediction for a fixture.
+ * Outcome probabilities for all three possible results.
+ */
+export type OutcomeProbabilities = {
+  /** Win probability for home team (0-100) */
+  homeWin: number;
+  /** Draw probability (0-100) */
+  draw: number;
+  /** Win probability for away team (0-100) */
+  awayWin: number;
+};
+
+/**
+ * Factor contribution to the prediction.
+ */
+export type PredictionFactor = {
+  /** Name of the factor (e.g., "Bookmaker Odds", "Recent Form") */
+  name: string;
+  /** Description of the factor's influence */
+  description: string;
+  /** Impact direction: positive favors home, negative favors away */
+  impact: 'home' | 'away' | 'neutral';
+  /** Weight of this factor (0-1) */
+  weight: number;
+};
+
+/**
+ * Favored team information for the prediction.
+ */
+export type FavoredTeam = {
+  id: number;
+  name: string;
+};
+
+/**
+ * A single prediction for a fixture (enhanced with backward compatibility).
  */
 export type Prediction = {
   /** The type of prediction */
   type: PredictionType;
-  /** The predicted result (home or away win) */
+
+  // --- Old fields (kept for backward compatibility) ---
+  /** The predicted result (home, away, or draw) */
   result: MatchResult;
   /** Probability as a percentage (0-100) */
   probability: number;
   /** Confidence level based on probability threshold */
   confidence: ConfidenceLevel;
+
+  // --- New fields ---
+  /** Probabilities for all three outcomes */
+  probabilities: OutcomeProbabilities;
+  /** The predicted outcome: 'home', 'draw', or 'away' */
+  predictedOutcome: MatchResult;
+  /** The favored team (null for draw prediction) */
+  favoredTeam: FavoredTeam | null;
+  /** Key factors that influenced this prediction (top 3) */
+  keyFactors: PredictionFactor[];
+  /** Human-readable summary for UI display */
+  summary: string;
 };
 
 /**

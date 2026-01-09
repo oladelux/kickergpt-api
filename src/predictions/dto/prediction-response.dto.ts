@@ -22,6 +22,61 @@ class PredictionLeagueDto {
   country: string;
 }
 
+class OutcomeProbabilitiesDto {
+  @ApiProperty({
+    example: 45.5,
+    description: 'Home win probability (0-100)',
+  })
+  homeWin: number;
+
+  @ApiProperty({
+    example: 25.0,
+    description: 'Draw probability (0-100)',
+  })
+  draw: number;
+
+  @ApiProperty({
+    example: 29.5,
+    description: 'Away win probability (0-100)',
+  })
+  awayWin: number;
+}
+
+class PredictionFactorDto {
+  @ApiProperty({
+    example: 'Bookmaker Odds',
+    description: 'Name of the factor',
+  })
+  name: string;
+
+  @ApiProperty({
+    example: 'Bookmakers favor Arsenal',
+    description: 'Description of the factor influence',
+  })
+  description: string;
+
+  @ApiProperty({
+    example: 'home',
+    enum: ['home', 'away', 'neutral'],
+    description: 'Which team this factor favors',
+  })
+  impact: 'home' | 'away' | 'neutral';
+
+  @ApiProperty({
+    example: 0.4,
+    description: 'Weight of this factor (0-1)',
+  })
+  weight: number;
+}
+
+class FavoredTeamDto {
+  @ApiProperty({ example: 42 })
+  id: number;
+
+  @ApiProperty({ example: 'Arsenal' })
+  name: string;
+}
+
 class PredictionDto {
   @ApiProperty({
     example: 'result',
@@ -30,26 +85,60 @@ class PredictionDto {
   })
   type: 'result';
 
+  // --- Old fields (backward compatibility) ---
   @ApiProperty({
     example: 'home',
-    enum: ['home', 'away'],
-    description: 'Predicted winner of the match',
+    enum: ['home', 'away', 'draw'],
+    description: 'Predicted winner of the match (legacy field)',
   })
-  result: 'home' | 'away';
+  result: 'home' | 'away' | 'draw';
 
   @ApiProperty({
-    example: 92.5,
+    example: 45.5,
     description: 'Probability percentage (0-100)',
   })
   probability: number;
 
   @ApiProperty({
-    example: 'high',
-    enum: ['very_high', 'high', 'medium', 'low'],
+    example: 'medium',
+    enum: ['very high', 'high', 'medium', 'low'],
     description:
-      'Confidence level: very_high (>=90%), high (>=70% and <90%), medium (>=50% and <70%), low (<50%)',
+      'Confidence level: very high (>=90%), high (>=70% and <90%), medium (>=50% and <70%), low (<50%)',
   })
   confidence: 'very high' | 'high' | 'medium' | 'low';
+
+  // --- New fields ---
+  @ApiProperty({
+    type: OutcomeProbabilitiesDto,
+    description: 'Probabilities for all three outcomes',
+  })
+  probabilities: OutcomeProbabilitiesDto;
+
+  @ApiProperty({
+    example: 'home',
+    enum: ['home', 'away', 'draw'],
+    description: 'The predicted outcome',
+  })
+  predictedOutcome: 'home' | 'away' | 'draw';
+
+  @ApiProperty({
+    type: FavoredTeamDto,
+    nullable: true,
+    description: 'The favored team (null for draw prediction)',
+  })
+  favoredTeam: FavoredTeamDto | null;
+
+  @ApiProperty({
+    type: [PredictionFactorDto],
+    description: 'Key factors that influenced this prediction (top 3)',
+  })
+  keyFactors: PredictionFactorDto[];
+
+  @ApiProperty({
+    example: 'Arsenal are favorites to win (medium confidence)',
+    description: 'Human-readable summary for UI display',
+  })
+  summary: string;
 }
 
 export class FixturePredictionDto {

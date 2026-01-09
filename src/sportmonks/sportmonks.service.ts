@@ -34,6 +34,7 @@ import {
 } from './types/fixture';
 import { RedisService } from '../redis/redis.service';
 import {
+  ApiFootballFixtureStatus,
   ApiFootballFixtureVenue,
   ApiFootballGoals,
   ApiFootballTeams,
@@ -42,6 +43,7 @@ import {
   KickerGPTMatchSummary,
   KickerGPTPlayerRating,
 } from '../fixtures/types/fixtures-response.type';
+import { isMatchCompleted } from './constants/match-states';
 
 type HeadToHeadQuery = {
   homeTeamId: number;
@@ -584,9 +586,16 @@ export class SportmonksService {
           const venueResponse = venue ? this.buildVenueResponse(venue) : null;
           const isDerby = this.isDerbyMatch(homeTeam, awayTeam);
           const matchOdds = this.buildMatchOdds(odds, apiFixture.id);
+
+          // Filter H2H results to only completed matches
+          const completedH2hResults = (h2hResults ?? []).filter((result) => {
+            const stateShortName = result.state?.short_name;
+            return isMatchCompleted(stateShortName);
+          });
+
           const h2h: KickerGPTMatchSummary[] = (
             await Promise.all(
-              (h2hResults ?? []).map(async (result) => ({
+              completedH2hResults.map(async (result) => ({
                 id: result.id,
                 date: result.starting_at,
                 timestamp: result.starting_at_timestamp,
@@ -595,7 +604,7 @@ export class SportmonksService {
                 venue: result.venue
                   ? this.buildVenueResponse(result.venue)
                   : null,
-                status: null,
+                status: this.buildMatchStatus(result.state),
                 goals: this.buildScoresResponse(result.scores),
                 derby: this.isDerbyMatch(homeTeam, awayTeam),
                 weatherSummary: await this.resolveWeatherSummary(
@@ -635,28 +644,33 @@ export class SportmonksService {
               };
             });
 
+          // Use yesterday's date to exclude today's potentially live matches
           const homeTeamRecentMatchesResults =
             await this.getRecentFixturesByTeam(
               homeTeamId,
               this.formatDateToYMD(season.starting_at),
-              this.getToday(),
+              this.getYesterday(),
             );
 
           const awayTeamRecentMatchesResults =
             await this.getRecentFixturesByTeam(
               awayTeamId,
               this.formatDateToYMD(season.starting_at),
-              this.getToday(),
+              this.getYesterday(),
             );
 
+          // Build match summaries, filtering to completed matches only
+          // and excluding the current fixture being predicted
           const homeTeamRecentMatches = await this.buildMatchSummaries(
             homeTeamRecentMatchesResults,
             `Fixture ${apiFixture.id} home form`,
+            apiFixture.id,
           );
 
           const awayTeamRecentMatches = await this.buildMatchSummaries(
             awayTeamRecentMatchesResults,
             `Fixture ${apiFixture.id} away form`,
+            apiFixture.id,
           );
 
           return {
@@ -958,6 +972,19 @@ export class SportmonksService {
     const day = `${now.getDate()}`.padStart(2, '0');
 
     return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  /**
+   * Get yesterday's date in YYYY-MM-DD format.
+   * Used to exclude today's potentially live matches from recent form analysis.
+   */
+  private getYesterday(): string {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const month = `${yesterday.getMonth() + 1}`.padStart(2, '0');
+    const day = `${yesterday.getDate()}`.padStart(2, '0');
+
+    return `${yesterday.getFullYear()}-${month}-${day}`;
   }
 
   /**
@@ -1426,11 +1453,28 @@ export class SportmonksService {
   private async buildMatchSummaries(
     fixtures: SportmonksFixture[],
     context?: string,
+    excludeFixtureId?: number,
   ): Promise<KickerGPTMatchSummary[]> {
     const ctx = context ?? 'summaries';
-    this.logger.log(`[${ctx}] start for ${fixtures.length} matches`);
+
+    // Filter to only completed matches and exclude the current fixture being predicted
+    const completedFixtures = fixtures.filter((fixture) => {
+      // Exclude the current fixture being predicted
+      if (excludeFixtureId && fixture.id === excludeFixtureId) {
+        return false;
+      }
+
+      // Only include completed matches - check state short_name
+      const stateShortName = fixture.state?.short_name;
+      return isMatchCompleted(stateShortName);
+    });
+
+    this.logger.log(
+      `[${ctx}] Filtered ${fixtures.length} matches to ${completedFixtures.length} completed matches`,
+    );
+
     const summaries = await Promise.all(
-      fixtures.map(async (result) => {
+      completedFixtures.map(async (result) => {
         const {
           participants,
           weatherreport,
@@ -1440,6 +1484,7 @@ export class SportmonksService {
           referees,
           scores,
           lineups,
+          state,
         } = result;
 
         const homeTeam = participants.find((p) => p.meta?.location === 'home');
@@ -1470,7 +1515,7 @@ export class SportmonksService {
           league: this.buildLeagueResponse(league, season),
           teams: this.buildTeamsResponse(participants),
           venue: venue ? this.buildVenueResponse(venue) : null,
-          status: null,
+          status: this.buildMatchStatus(state),
           goals: this.buildScoresResponse(scores),
           derby: this.isDerbyMatch(homeTeam, awayTeam),
           weatherSummary,
@@ -1489,6 +1534,22 @@ export class SportmonksService {
       const timestampB = b.timestamp ?? new Date(b.date).getTime() / 1000;
       return timestampB - timestampA;
     });
+  }
+
+  /**
+   * Build match status from Sportmonks state object.
+   */
+  private buildMatchStatus(
+    state: SportmonksFixture['state'] | undefined,
+  ): ApiFootballFixtureStatus | null {
+    if (!state) return null;
+
+    return {
+      long: state.name,
+      short: state.short_name,
+      elapsed: null,
+      extra: null,
+    };
   }
 
   private extractPlayerRatings(
