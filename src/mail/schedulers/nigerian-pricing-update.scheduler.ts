@@ -29,7 +29,7 @@ export class NigerianPricingUpdateScheduler {
   @Cron('00 08 * * *')
   async sendNigerianPricingUpdateEmail(): Promise<void> {
     // Remove this return statement when ready to send
-    //return;
+    return;
     this.logger.log(
       'Starting Nigerian pricing update bulk email job for Nigerian users...',
     );
