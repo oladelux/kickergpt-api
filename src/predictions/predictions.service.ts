@@ -10,6 +10,8 @@ import {
   FixturePrediction,
   TodayPredictionsResponse,
   ProbabilityCalculation,
+  PredictionFactor,
+  FavoredTeam,
   buildPredictionsCacheKey,
   PREDICTIONS_CACHE_TTL_SECONDS,
   VERY_HIGH_CONFIDENCE_THRESHOLD,
@@ -18,6 +20,7 @@ import {
   ConfidenceLevel,
   MatchResult,
 } from './types/prediction.types';
+import { ApiFootballTeams } from '../fixtures/types/fixtures-response.type';
 
 /**
  * Weights for each factor in probability calculation.
@@ -210,14 +213,28 @@ export class PredictionsService {
     fixture: KickerGPTFixturesResponse,
   ): FixturePrediction | null {
     const calculation = this.calculateProbabilities(fixture);
-    const predictedResult: MatchResult =
-      calculation.homeProbability > calculation.awayProbability
-        ? 'home'
-        : 'away';
-    const probability =
-      predictedResult === 'home'
-        ? calculation.homeProbability
-        : calculation.awayProbability;
+    const { homeProbability, awayProbability, drawProbability } = calculation;
+
+    // Determine predicted outcome (including draw)
+    let predictedOutcome: MatchResult;
+    let probability: number;
+
+    if (
+      homeProbability >= awayProbability &&
+      homeProbability >= drawProbability
+    ) {
+      predictedOutcome = 'home';
+      probability = homeProbability;
+    } else if (
+      awayProbability >= homeProbability &&
+      awayProbability >= drawProbability
+    ) {
+      predictedOutcome = 'away';
+      probability = awayProbability;
+    } else {
+      predictedOutcome = 'draw';
+      probability = drawProbability;
+    }
 
     // Assign confidence level based on probability ranges
     let confidence: ConfidenceLevel;
@@ -230,6 +247,30 @@ export class PredictionsService {
     } else {
       confidence = 'low';
     }
+
+    // Build key factors (top 3)
+    const keyFactors = this.buildKeyFactors(calculation, fixture);
+
+    // Build favored team object (null for draw)
+    const favoredTeam: FavoredTeam | null =
+      predictedOutcome === 'draw'
+        ? null
+        : predictedOutcome === 'home'
+          ? { id: fixture.teams.home.id, name: fixture.teams.home.name }
+          : { id: fixture.teams.away.id, name: fixture.teams.away.name };
+
+    // Build human-readable summary
+    const summary = this.buildPredictionSummary(
+      predictedOutcome,
+      confidence,
+      fixture.teams,
+    );
+
+    // Round probabilities to 1 decimal
+    const roundedProbability = Math.round(probability * 10) / 10;
+    const roundedHomeProbability = Math.round(homeProbability * 10) / 10;
+    const roundedDrawProbability = Math.round(drawProbability * 10) / 10;
+    const roundedAwayProbability = Math.round(awayProbability * 10) / 10;
 
     return {
       fixtureId: fixture.id,
@@ -252,13 +293,131 @@ export class PredictionsService {
       predictions: [
         {
           type: 'result',
-          result: predictedResult,
-          probability: Math.round(probability * 10) / 10, // Round to 1 decimal
+          // Old fields (backward compatibility)
+          result: predictedOutcome,
+          probability: roundedProbability,
           confidence,
+          // New fields
+          probabilities: {
+            homeWin: roundedHomeProbability,
+            draw: roundedDrawProbability,
+            awayWin: roundedAwayProbability,
+          },
+          predictedOutcome,
+          favoredTeam,
+          keyFactors,
+          summary,
         },
       ],
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Build key factors array from calculation results (top 3 by weight).
+   */
+  private buildKeyFactors(
+    calculation: ProbabilityCalculation,
+    fixture: KickerGPTFixturesResponse,
+  ): PredictionFactor[] {
+    const factors: PredictionFactor[] = [];
+    const { factors: calcFactors } = calculation;
+
+    if (calcFactors.bookmakerOdds) {
+      const impact =
+        calcFactors.bookmakerOdds.home > calcFactors.bookmakerOdds.away
+          ? 'home'
+          : 'away';
+      factors.push({
+        name: 'Bookmaker Odds',
+        description: `Bookmakers favor ${impact === 'home' ? fixture.teams.home.name : fixture.teams.away.name}`,
+        impact,
+        weight: calcFactors.bookmakerOdds.weight,
+      });
+    }
+
+    if (calcFactors.recentForm) {
+      const impact =
+        calcFactors.recentForm.home > calcFactors.recentForm.away
+          ? 'home'
+          : 'away';
+      factors.push({
+        name: 'Recent Form',
+        description: `${impact === 'home' ? fixture.teams.home.name : fixture.teams.away.name} has better recent form`,
+        impact,
+        weight: calcFactors.recentForm.weight,
+      });
+    }
+
+    if (calcFactors.h2hHistory) {
+      const impact =
+        calcFactors.h2hHistory.home > calcFactors.h2hHistory.away
+          ? 'home'
+          : 'away';
+      factors.push({
+        name: 'Head-to-Head',
+        description: `Historical advantage for ${impact === 'home' ? fixture.teams.home.name : fixture.teams.away.name}`,
+        impact,
+        weight: calcFactors.h2hHistory.weight,
+      });
+    }
+
+    if (calcFactors.injuries) {
+      const impact =
+        calcFactors.injuries.home > calcFactors.injuries.away ? 'home' : 'away';
+      const disadvantagedTeam =
+        impact === 'home' ? fixture.teams.away.name : fixture.teams.home.name;
+      factors.push({
+        name: 'Injuries',
+        description: `${disadvantagedTeam} has more injury concerns`,
+        impact,
+        weight: calcFactors.injuries.weight,
+      });
+    }
+
+    if (calcFactors.homeAdvantage) {
+      factors.push({
+        name: 'Home Advantage',
+        description: fixture.derby
+          ? 'Derby match reduces home advantage'
+          : 'Playing at home gives an edge',
+        impact: 'home',
+        weight: calcFactors.homeAdvantage.weight,
+      });
+    }
+
+    if (calcFactors.newsSentiment) {
+      const impact =
+        calcFactors.newsSentiment.home > calcFactors.newsSentiment.away
+          ? 'home'
+          : 'away';
+      factors.push({
+        name: 'News Sentiment',
+        description: `Recent news favors ${impact === 'home' ? fixture.teams.home.name : fixture.teams.away.name}`,
+        impact,
+        weight: calcFactors.newsSentiment.weight,
+      });
+    }
+
+    // Sort by weight descending and return top 3
+    return factors.sort((a, b) => b.weight - a.weight).slice(0, 3);
+  }
+
+  /**
+   * Build human-readable prediction summary for UI display.
+   */
+  private buildPredictionSummary(
+    predictedOutcome: MatchResult,
+    confidence: ConfidenceLevel,
+    teams: ApiFootballTeams,
+  ): string {
+    if (predictedOutcome === 'draw') {
+      return `A draw is predicted (${confidence} confidence)`;
+    }
+
+    const teamName =
+      predictedOutcome === 'home' ? teams.home.name : teams.away.name;
+    return `${teamName} are favorites to win (${confidence} confidence)`;
   }
 
   /**
