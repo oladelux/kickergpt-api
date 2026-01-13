@@ -35,6 +35,9 @@ export class AdsService {
 
     // Validate credits earned
     if (creditsEarned !== creditsPerAd) {
+      this.logger.error(
+        `Invalid credits amount. Expected ${creditsPerAd}, got ${creditsEarned}`,
+      );
       throw new BadRequestException(
         `Invalid credits amount. Expected ${creditsPerAd}, got ${creditsEarned}`,
       );
