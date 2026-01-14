@@ -22,7 +22,7 @@ export default registerAs<AdsConfig>('ads', () => {
 
   return {
     maxAdsPerDay: parseInt(process.env.MAX_ADS_PER_DAY ?? '20', 10),
-    adCooldownMinutes: parseInt(process.env.AD_COOLDOWN_MINUTES ?? '5', 10),
-    creditsPerAd: parseInt(process.env.CREDITS_PER_AD ?? '5', 10),
+    adCooldownMinutes: parseInt(process.env.AD_COOLDOWN_MINUTES ?? '1', 10),
+    creditsPerAd: parseInt(process.env.CREDITS_PER_AD ?? '2', 10),
   };
 });
