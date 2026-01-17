@@ -24,7 +24,7 @@ import { SubscriptionPlan } from '../subscriptions/domain/subscription-plan.enum
 import { SubscriptionStatus } from '../subscriptions/domain/subscription-status.enum';
 
 /** Maximum number of predictions shown to free users */
-const FREE_USER_PREDICTION_LIMIT = 5;
+const FREE_USER_PREDICTION_LIMIT = 10;
 
 @ApiTags('Predictions')
 @Controller({
