@@ -19,6 +19,11 @@ import {
   MEDIUM_CONFIDENCE_THRESHOLD,
   ConfidenceLevel,
   MatchResult,
+  GoalProbabilityCalculation,
+  GoalPrediction,
+  ResultPrediction,
+  GoalOutcome,
+  LEAGUE_AVERAGE_GOALS,
 } from './types/prediction.types';
 import { ApiFootballTeams } from '../fixtures/types/fixtures-response.type';
 
@@ -46,6 +51,18 @@ const POSITION_INJURY_WEIGHTS: Record<string, number> = {
   defender: 0.5,
   unknown: 0.4,
 };
+
+/**
+ * Weights for goal prediction factors.
+ * Must sum to 1.0 when all factors are available.
+ */
+const GOAL_WEIGHTS = {
+  teamGoalAverages: 0.4,
+  recentGoalTrends: 0.3,
+  h2hGoalPatterns: 0.15,
+  injuryImpact: 0.1,
+  homeAdvantage: 0.05,
+} as const;
 
 @Injectable()
 export class PredictionsService {
@@ -272,6 +289,41 @@ export class PredictionsService {
     const roundedDrawProbability = Math.round(drawProbability * 10) / 10;
     const roundedAwayProbability = Math.round(awayProbability * 10) / 10;
 
+    // Create result prediction
+    const resultPrediction: ResultPrediction = {
+      type: 'result',
+      // Old fields (backward compatibility)
+      result: predictedOutcome,
+      probability: roundedProbability,
+      confidence,
+      // New fields
+      probabilities: {
+        homeWin: roundedHomeProbability,
+        draw: roundedDrawProbability,
+        awayWin: roundedAwayProbability,
+      },
+      predictedOutcome,
+      favoredTeam,
+      keyFactors,
+      summary,
+    };
+
+    // Generate Over 1.5 Goals prediction
+    const over15Calculation = this.calculateGoalProbabilities(fixture, 1.5);
+    const over15Prediction = this.buildGoalPrediction(
+      over15Calculation,
+      fixture,
+      'over_1_5_goals',
+    );
+
+    // Generate Over 2.5 Goals prediction
+    const over25Calculation = this.calculateGoalProbabilities(fixture, 2.5);
+    const over25Prediction = this.buildGoalPrediction(
+      over25Calculation,
+      fixture,
+      'over_2_5_goals',
+    );
+
     return {
       fixtureId: fixture.id,
       homeTeam: {
@@ -290,25 +342,7 @@ export class PredictionsService {
         name: fixture.league.name,
         country: fixture.league.country,
       },
-      predictions: [
-        {
-          type: 'result',
-          // Old fields (backward compatibility)
-          result: predictedOutcome,
-          probability: roundedProbability,
-          confidence,
-          // New fields
-          probabilities: {
-            homeWin: roundedHomeProbability,
-            draw: roundedDrawProbability,
-            awayWin: roundedAwayProbability,
-          },
-          predictedOutcome,
-          favoredTeam,
-          keyFactors,
-          summary,
-        },
-      ],
+      predictions: [resultPrediction, over15Prediction, over25Prediction],
       generatedAt: new Date().toISOString(),
     };
   }
@@ -875,6 +909,558 @@ export class PredictionsService {
       home: homeAdvantage,
       away: awayChance,
     };
+  }
+
+  // ==================== GOAL PREDICTION METHODS ====================
+
+  /**
+   * Calculate goal probabilities for a specific threshold (1.5 or 2.5).
+   * Master coordinator for all goal-specific factors.
+   */
+  private calculateGoalProbabilities(
+    fixture: KickerGPTFixturesResponse,
+    threshold: number,
+  ): GoalProbabilityCalculation {
+    const factors: GoalProbabilityCalculation['factors'] = {
+      teamGoalAverages: null,
+      recentGoalTrends: null,
+      h2hGoalPatterns: null,
+      injuryImpact: null,
+      homeAdvantage: null,
+    };
+
+    let totalWeight = 0;
+    let weightedOverSum = 0;
+
+    // 1. Team Goal Averages (40%)
+    const avgResult = this.calculateFromGoalAverages(
+      fixture.homeTeamRecentMatches,
+      fixture.awayTeamRecentMatches,
+      fixture.teams.home.id,
+      fixture.teams.away.id,
+      threshold,
+    );
+    if (avgResult) {
+      factors.teamGoalAverages = {
+        ...avgResult,
+        weight: GOAL_WEIGHTS.teamGoalAverages,
+      };
+      weightedOverSum += avgResult.combined * GOAL_WEIGHTS.teamGoalAverages;
+      totalWeight += GOAL_WEIGHTS.teamGoalAverages;
+    }
+
+    // 2. Recent Goal Trends (30%)
+    const trendResult = this.calculateFromRecentGoalTrends(
+      fixture.homeTeamRecentMatches,
+      fixture.awayTeamRecentMatches,
+      fixture.teams.home.id,
+      fixture.teams.away.id,
+      threshold,
+    );
+    if (trendResult) {
+      factors.recentGoalTrends = {
+        ...trendResult,
+        weight: GOAL_WEIGHTS.recentGoalTrends,
+      };
+      weightedOverSum += trendResult.combined * GOAL_WEIGHTS.recentGoalTrends;
+      totalWeight += GOAL_WEIGHTS.recentGoalTrends;
+    }
+
+    // 3. H2H Goal Patterns (15%)
+    const h2hResult = this.calculateFromH2HGoals(fixture.h2h, threshold);
+    if (h2hResult) {
+      factors.h2hGoalPatterns = {
+        ...h2hResult,
+        weight: GOAL_WEIGHTS.h2hGoalPatterns,
+      };
+      weightedOverSum += h2hResult.overRate * GOAL_WEIGHTS.h2hGoalPatterns;
+      totalWeight += GOAL_WEIGHTS.h2hGoalPatterns;
+    }
+
+    // 4. Injury Impact on Goals (10%)
+    const injuryResult = this.calculateGoalInjuryImpact(
+      fixture.homeInjuries,
+      fixture.awayInjuries,
+    );
+    if (injuryResult) {
+      factors.injuryImpact = {
+        ...injuryResult,
+        weight: GOAL_WEIGHTS.injuryImpact,
+      };
+      weightedOverSum += injuryResult.combined * GOAL_WEIGHTS.injuryImpact;
+      totalWeight += GOAL_WEIGHTS.injuryImpact;
+    }
+
+    // 5. Home Advantage for Goals (5%)
+    const homeAdvResult = this.calculateGoalHomeAdvantage();
+    factors.homeAdvantage = {
+      ...homeAdvResult,
+      weight: GOAL_WEIGHTS.homeAdvantage,
+    };
+    weightedOverSum += homeAdvResult.adjustment * GOAL_WEIGHTS.homeAdvantage;
+    totalWeight += GOAL_WEIGHTS.homeAdvantage;
+
+    // Normalize probabilities
+    let overProbability: number;
+    let underProbability: number;
+    let expectedGoals: number;
+
+    if (totalWeight > 0) {
+      overProbability = weightedOverSum / totalWeight;
+      underProbability = 1 - overProbability;
+
+      // Calculate expected goals (for context)
+      expectedGoals = factors.teamGoalAverages?.home ?? LEAGUE_AVERAGE_GOALS;
+      if (factors.teamGoalAverages) {
+        expectedGoals =
+          factors.teamGoalAverages.home + factors.teamGoalAverages.away;
+      }
+    } else {
+      // Fallback to league average
+      const leagueAvg = LEAGUE_AVERAGE_GOALS;
+      overProbability = leagueAvg > threshold ? 0.5 : 0.4;
+      underProbability = 1 - overProbability;
+      expectedGoals = leagueAvg;
+    }
+
+    return {
+      overProbability,
+      underProbability,
+      threshold,
+      expectedGoals,
+      factors,
+    };
+  }
+
+  /**
+   * Calculate probability from team goal averages.
+   * Returns expected goals and probability of over threshold.
+   */
+  private calculateFromGoalAverages(
+    homeMatches: KickerGPTMatchSummary[] | undefined,
+    awayMatches: KickerGPTMatchSummary[] | undefined,
+    homeTeamId: number,
+    awayTeamId: number,
+    threshold: number,
+  ): { home: number; away: number; combined: number } | null {
+    if (
+      (!homeMatches || homeMatches.length === 0) &&
+      (!awayMatches || awayMatches.length === 0)
+    ) {
+      return null;
+    }
+
+    const homeStats = this.calculateTeamGoalStats(
+      homeMatches ?? [],
+      homeTeamId,
+    );
+    const awayStats = this.calculateTeamGoalStats(
+      awayMatches ?? [],
+      awayTeamId,
+    );
+
+    // Expected goals = home avg scored + away avg conceded
+    const homeExpectedGoals = (homeStats.avgScored + awayStats.avgConceded) / 2;
+    // Expected goals = away avg scored + home avg conceded
+    const awayExpectedGoals = (awayStats.avgScored + homeStats.avgConceded) / 2;
+
+    const combinedExpectedGoals = homeExpectedGoals + awayExpectedGoals;
+
+    // Convert expected goals to probability using sigmoid-inspired approach
+    const margin = combinedExpectedGoals - threshold;
+    const probability = this.expectedGoalsToProbability(margin);
+
+    return {
+      home: homeExpectedGoals,
+      away: awayExpectedGoals,
+      combined: probability,
+    };
+  }
+
+  /**
+   * Calculate goal statistics for a team from recent matches.
+   */
+  private calculateTeamGoalStats(
+    matches: KickerGPTMatchSummary[],
+    teamId: number,
+  ): { avgScored: number; avgConceded: number } {
+    if (!matches || matches.length === 0) {
+      return { avgScored: 1.2, avgConceded: 1.2 }; // League average fallback
+    }
+
+    const recentMatches = matches.slice(0, 5); // Last 5 matches
+    let totalScored = 0;
+    let totalConceded = 0;
+    let validMatches = 0;
+
+    for (const match of recentMatches) {
+      const isHome = match.teams.home.id === teamId;
+      const teamGoals = isHome ? match.goals.home : match.goals.away;
+      const oppGoals = isHome ? match.goals.away : match.goals.home;
+
+      if (teamGoals !== null && oppGoals !== null) {
+        totalScored += teamGoals;
+        totalConceded += oppGoals;
+        validMatches++;
+      }
+    }
+
+    if (validMatches === 0) {
+      return { avgScored: 1.2, avgConceded: 1.2 };
+    }
+
+    return {
+      avgScored: totalScored / validMatches,
+      avgConceded: totalConceded / validMatches,
+    };
+  }
+
+  /**
+   * Convert expected goals margin to probability.
+   * Uses sigmoid-like function for smooth probability curve.
+   */
+  private expectedGoalsToProbability(margin: number): number {
+    // Sigmoid function: 1 / (1 + e^(-k*x))
+    // k=1.5 provides good sensitivity around 0 margin
+    const k = 1.5;
+    const probability = 1 / (1 + Math.exp(-k * margin));
+    return Math.max(0, Math.min(1, probability));
+  }
+
+  /**
+   * Calculate probability from recent goal trends.
+   * Analyzes what % of recent matches had over threshold goals.
+   */
+  private calculateFromRecentGoalTrends(
+    homeMatches: KickerGPTMatchSummary[] | undefined,
+    awayMatches: KickerGPTMatchSummary[] | undefined,
+    homeTeamId: number,
+    awayTeamId: number,
+    threshold: number,
+  ): { home: number; away: number; combined: number } | null {
+    if (
+      (!homeMatches || homeMatches.length === 0) &&
+      (!awayMatches || awayMatches.length === 0)
+    ) {
+      return null;
+    }
+
+    const homeTrend = this.calculateOverRate(
+      homeMatches ?? [],
+      homeTeamId,
+      threshold,
+    );
+    const awayTrend = this.calculateOverRate(
+      awayMatches ?? [],
+      awayTeamId,
+      threshold,
+    );
+
+    // Combined trend is weighted average
+    const combined = (homeTrend + awayTrend) / 2;
+
+    return { home: homeTrend, away: awayTrend, combined };
+  }
+
+  /**
+   * Calculate percentage of matches that went over threshold.
+   */
+  private calculateOverRate(
+    matches: KickerGPTMatchSummary[],
+    teamId: number,
+    threshold: number,
+  ): number {
+    if (!matches || matches.length === 0) return 0.5;
+
+    const recentMatches = matches.slice(0, 5);
+    let overCount = 0;
+    let validMatches = 0;
+
+    for (const match of recentMatches) {
+      const homeGoals = match.goals.home;
+      const awayGoals = match.goals.away;
+
+      if (homeGoals !== null && awayGoals !== null) {
+        const totalGoals = homeGoals + awayGoals;
+        if (totalGoals > threshold) {
+          overCount++;
+        }
+        validMatches++;
+      }
+    }
+
+    return validMatches > 0 ? overCount / validMatches : 0.5;
+  }
+
+  /**
+   * Calculate probability from H2H goal patterns.
+   */
+  private calculateFromH2HGoals(
+    h2h: KickerGPTMatchSummary[] | undefined,
+    threshold: number,
+  ): { overRate: number } | null {
+    if (!h2h || h2h.length === 0) {
+      return null;
+    }
+
+    let overCount = 0;
+    let validMatches = 0;
+
+    for (const match of h2h) {
+      const homeGoals = match.goals.home;
+      const awayGoals = match.goals.away;
+
+      if (homeGoals !== null && awayGoals !== null) {
+        const totalGoals = homeGoals + awayGoals;
+        if (totalGoals > threshold) {
+          overCount++;
+        }
+        validMatches++;
+      }
+    }
+
+    if (validMatches === 0) return null;
+
+    return { overRate: overCount / validMatches };
+  }
+
+  /**
+   * Calculate injury impact on goals.
+   * Attackers missing = fewer goals, defenders missing = more goals.
+   */
+  private calculateGoalInjuryImpact(
+    homeInjuries: KickerGPTInjuryPlayerFlag[] | undefined,
+    awayInjuries: KickerGPTInjuryPlayerFlag[] | undefined,
+  ): { home: number; away: number; combined: number } | null {
+    if (
+      (!homeInjuries || homeInjuries.length === 0) &&
+      (!awayInjuries || awayInjuries.length === 0)
+    ) {
+      return { home: 0, away: 0, combined: 0.5 }; // Neutral
+    }
+
+    const homeImpact = this.calculateGoalInjuryScore(homeInjuries ?? []);
+    const awayImpact = this.calculateGoalInjuryScore(awayInjuries ?? []);
+
+    // Net impact: attackers out = fewer goals, defenders out = more goals
+    // homeImpact.attackers = goals down, homeImpact.defenders = goals up
+    const homeNetImpact = homeImpact.defenders - homeImpact.attackers;
+    const awayNetImpact = awayImpact.defenders - awayImpact.attackers;
+
+    // Total impact on expected goals
+    const totalImpact = homeNetImpact + awayNetImpact;
+
+    // Convert to probability adjustment
+    // Positive impact = more goals expected
+    const combined = this.expectedGoalsToProbability(totalImpact * 0.3);
+
+    return { home: homeNetImpact, away: awayNetImpact, combined };
+  }
+
+  /**
+   * Calculate injury score separated by attacker vs defender.
+   */
+  private calculateGoalInjuryScore(injuries: KickerGPTInjuryPlayerFlag[]): {
+    attackers: number;
+    defenders: number;
+  } {
+    let attackers = 0;
+    let defenders = 0;
+
+    for (const injury of injuries) {
+      const position = (injury.position ?? 'unknown').toLowerCase();
+
+      if (position.includes('forward') || position.includes('striker')) {
+        attackers += 0.8;
+      } else if (position.includes('midfielder')) {
+        attackers += 0.4; // Midfielders contribute to attack
+        defenders += 0.2; // Also to defense
+      } else if (position.includes('defender')) {
+        defenders += 0.5;
+      } else if (position.includes('goalkeeper')) {
+        defenders += 1.0;
+      }
+    }
+
+    return { attackers, defenders };
+  }
+
+  /**
+   * Calculate home advantage adjustment for goals.
+   * Home teams typically score ~0.3 more goals.
+   */
+  private calculateGoalHomeAdvantage(): { adjustment: number } {
+    // Home advantage adds ~0.3 goals on average
+    // This slightly increases probability of over
+    const homeBoost = 0.3;
+    const adjustment = 0.5 + homeBoost / 10; // Small boost to over probability
+
+    return { adjustment };
+  }
+
+  /**
+   * Build a goal prediction from calculation results.
+   */
+  private buildGoalPrediction(
+    calculation: GoalProbabilityCalculation,
+    fixture: KickerGPTFixturesResponse,
+    type: 'over_1_5_goals' | 'over_2_5_goals',
+  ): GoalPrediction {
+    const { overProbability, underProbability, threshold, expectedGoals } =
+      calculation;
+
+    // Determine predicted outcome
+    const predictedOutcome: GoalOutcome =
+      overProbability >= 0.5 ? 'over' : 'under';
+    const probability = Math.max(overProbability, underProbability) * 100;
+
+    // Assign confidence level
+    let confidence: ConfidenceLevel;
+    if (probability >= VERY_HIGH_CONFIDENCE_THRESHOLD) {
+      confidence = 'very high';
+    } else if (probability >= HIGH_CONFIDENCE_THRESHOLD) {
+      confidence = 'high';
+    } else if (probability >= MEDIUM_CONFIDENCE_THRESHOLD) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
+
+    // Build key factors
+    const keyFactors = this.buildGoalKeyFactors(calculation, fixture);
+
+    // Build summary
+    const summary = this.buildGoalPredictionSummary(
+      predictedOutcome,
+      confidence,
+      threshold,
+      expectedGoals,
+    );
+
+    // Round probabilities
+    const roundedOverProb = Math.round(overProbability * 1000) / 10; // 1 decimal
+    const roundedUnderProb = Math.round(underProbability * 1000) / 10;
+    const roundedProbability = Math.round(probability * 10) / 10;
+
+    return {
+      type,
+      predictedOutcome,
+      probability: roundedProbability,
+      confidence,
+      probabilities: {
+        over: roundedOverProb,
+        under: roundedUnderProb,
+      },
+      threshold,
+      keyFactors,
+      summary,
+    };
+  }
+
+  /**
+   * Build key factors for goal predictions (top 3 by weight).
+   */
+  private buildGoalKeyFactors(
+    calculation: GoalProbabilityCalculation,
+    fixture: KickerGPTFixturesResponse,
+  ): PredictionFactor[] {
+    const factors: PredictionFactor[] = [];
+    const { factors: calcFactors } = calculation;
+    const threshold = calculation.threshold;
+
+    if (calcFactors.teamGoalAverages) {
+      const avg = calcFactors.teamGoalAverages;
+      const combinedAvg = avg.home + avg.away;
+
+      factors.push({
+        name: 'Team Goal Averages',
+        description: `Combined avg: ${combinedAvg.toFixed(1)} goals/match (${fixture.teams.home.name}: ${avg.home.toFixed(1)}, ${fixture.teams.away.name}: ${avg.away.toFixed(1)})`,
+        impact: 'neutral',
+        weight: calcFactors.teamGoalAverages.weight,
+      });
+    }
+
+    if (calcFactors.recentGoalTrends) {
+      const trend = calcFactors.recentGoalTrends;
+      const homePercent = Math.round(trend.home * 100);
+      const awayPercent = Math.round(trend.away * 100);
+
+      factors.push({
+        name: 'Recent Goal Trends',
+        description: `${homePercent}% of ${fixture.teams.home.name} matches, ${awayPercent}% of ${fixture.teams.away.name} matches had over ${threshold} goals`,
+        impact: 'neutral',
+        weight: calcFactors.recentGoalTrends.weight,
+      });
+    }
+
+    if (calcFactors.h2hGoalPatterns) {
+      const h2h = calcFactors.h2hGoalPatterns;
+      const percent = Math.round(h2h.overRate * 100);
+
+      factors.push({
+        name: 'Head-to-Head Goals',
+        description: `${percent}% of H2H matches had over ${threshold} goals`,
+        impact: 'neutral',
+        weight: calcFactors.h2hGoalPatterns.weight,
+      });
+    }
+
+    if (
+      calcFactors.injuryImpact &&
+      (calcFactors.injuryImpact.home !== 0 ||
+        calcFactors.injuryImpact.away !== 0)
+    ) {
+      const homeInjuries = fixture.homeInjuries?.length ?? 0;
+      const awayInjuries = fixture.awayInjuries?.length ?? 0;
+      const totalImpact =
+        calcFactors.injuryImpact.home + calcFactors.injuryImpact.away;
+
+      let description = '';
+      if (totalImpact > 0) {
+        description = `Key defenders missing - could increase goals`;
+      } else if (totalImpact < 0) {
+        description = `Key attackers missing - could reduce goals`;
+      } else {
+        description = `${homeInjuries + awayInjuries} injuries with mixed impact`;
+      }
+
+      factors.push({
+        name: 'Injury Impact',
+        description,
+        impact: 'neutral',
+        weight: calcFactors.injuryImpact.weight,
+      });
+    }
+
+    if (calcFactors.homeAdvantage) {
+      factors.push({
+        name: 'Home Advantage',
+        description: 'Home teams typically score more goals',
+        impact: 'neutral',
+        weight: calcFactors.homeAdvantage.weight,
+      });
+    }
+
+    // Sort by weight descending and return top 3
+    return factors.sort((a, b) => b.weight - a.weight).slice(0, 3);
+  }
+
+  /**
+   * Build human-readable summary for goal predictions.
+   */
+  private buildGoalPredictionSummary(
+    predictedOutcome: GoalOutcome,
+    confidence: ConfidenceLevel,
+    threshold: number,
+    expectedGoals: number,
+  ): string {
+    const thresholdStr = threshold === 1.5 ? '1.5' : '2.5';
+
+    if (predictedOutcome === 'over') {
+      return `Over ${thresholdStr} goals predicted (${confidence} confidence, ~${expectedGoals.toFixed(1)} expected goals)`;
+    } else {
+      return `Under ${thresholdStr} goals predicted (${confidence} confidence, ~${expectedGoals.toFixed(1)} expected goals)`;
+    }
   }
 
   /**
