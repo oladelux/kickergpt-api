@@ -5,10 +5,13 @@
 
 /**
  * The type of prediction being made.
- * Currently supports 'result' for match outcome predictions.
- * Extensible for future prediction types like 'over_under', 'btts', etc.
+ * Currently supports:
+ * - 'result': Match outcome predictions (home/away/draw)
+ * - 'over_1_5_goals': Over/under 1.5 goals predictions
+ * - 'over_2_5_goals': Over/under 2.5 goals predictions
+ * Extensible for future prediction types like 'btts', 'correct_score', etc.
  */
-export type PredictionType = 'result';
+export type PredictionType = 'result' | 'over_1_5_goals' | 'over_2_5_goals';
 
 /**
  * Confidence level based on probability percentage.
@@ -37,6 +40,21 @@ export type OutcomeProbabilities = {
 };
 
 /**
+ * The predicted outcome for goal predictions.
+ */
+export type GoalOutcome = 'over' | 'under';
+
+/**
+ * Probabilities for over/under goal predictions.
+ */
+export type GoalProbabilities = {
+  /** Probability of goals being over threshold (0-100) */
+  over: number;
+  /** Probability of goals being under threshold (0-100) */
+  under: number;
+};
+
+/**
  * Factor contribution to the prediction.
  */
 export type PredictionFactor = {
@@ -59,11 +77,11 @@ export type FavoredTeam = {
 };
 
 /**
- * A single prediction for a fixture (enhanced with backward compatibility).
+ * A result prediction for a fixture (match outcome).
  */
-export type Prediction = {
+export type ResultPrediction = {
   /** The type of prediction */
-  type: PredictionType;
+  type: 'result';
 
   // --- Old fields (kept for backward compatibility) ---
   /** The predicted result (home, away, or draw) */
@@ -85,6 +103,34 @@ export type Prediction = {
   /** Human-readable summary for UI display */
   summary: string;
 };
+
+/**
+ * A goal prediction for a fixture (over/under goals).
+ */
+export type GoalPrediction = {
+  /** The type of prediction (over_1_5_goals or over_2_5_goals) */
+  type: 'over_1_5_goals' | 'over_2_5_goals';
+  /** The predicted outcome: 'over' or 'under' */
+  predictedOutcome: GoalOutcome;
+  /** Probability of the predicted outcome (0-100) */
+  probability: number;
+  /** Confidence level based on probability threshold */
+  confidence: ConfidenceLevel;
+  /** Probabilities for both outcomes */
+  probabilities: GoalProbabilities;
+  /** Goal threshold (1.5 or 2.5) */
+  threshold: number;
+  /** Key factors that influenced this prediction (top 3) */
+  keyFactors: PredictionFactor[];
+  /** Human-readable summary for UI display */
+  summary: string;
+};
+
+/**
+ * A single prediction for a fixture (discriminated union).
+ * Can be either a result prediction or a goal prediction.
+ */
+export type Prediction = ResultPrediction | GoalPrediction;
 
 /**
  * Team information included in predictions.
@@ -191,3 +237,78 @@ export const HIGH_CONFIDENCE_THRESHOLD = 70;
  * Threshold for "medium" confidence level (50%).
  */
 export const MEDIUM_CONFIDENCE_THRESHOLD = 50;
+
+/**
+ * Goal thresholds for over/under predictions.
+ */
+export const GOAL_THRESHOLDS = {
+  OVER_1_5: 1.5,
+  OVER_2_5: 2.5,
+} as const;
+
+/**
+ * League average goals per match (fallback value).
+ */
+export const LEAGUE_AVERAGE_GOALS = 2.7;
+
+/**
+ * Minimum matches required for reliable goal statistics.
+ */
+export const MIN_MATCHES_FOR_GOAL_STATS = 3;
+
+/**
+ * Internal type for goal probability calculation results.
+ */
+export type GoalProbabilityCalculation = {
+  /** Probability of goals being over threshold (0-1) */
+  overProbability: number;
+  /** Probability of goals being under threshold (0-1) */
+  underProbability: number;
+  /** The goal threshold being analyzed */
+  threshold: number;
+  /** Expected total goals in the match */
+  expectedGoals: number;
+  /** Contributing factors to the calculation */
+  factors: {
+    teamGoalAverages: {
+      home: number;
+      away: number;
+      combined: number;
+      weight: number;
+    } | null;
+    recentGoalTrends: {
+      home: number;
+      away: number;
+      combined: number;
+      weight: number;
+    } | null;
+    h2hGoalPatterns: { overRate: number; weight: number } | null;
+    injuryImpact: {
+      home: number;
+      away: number;
+      combined: number;
+      weight: number;
+    } | null;
+    homeAdvantage: { adjustment: number; weight: number } | null;
+  };
+};
+
+/**
+ * Type guard to check if a prediction is a goal prediction.
+ */
+export function isGoalPrediction(
+  prediction: Prediction,
+): prediction is GoalPrediction {
+  return (
+    prediction.type === 'over_1_5_goals' || prediction.type === 'over_2_5_goals'
+  );
+}
+
+/**
+ * Type guard to check if a prediction is a result prediction.
+ */
+export function isResultPrediction(
+  prediction: Prediction,
+): prediction is ResultPrediction {
+  return prediction.type === 'result';
+}

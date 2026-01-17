@@ -77,11 +77,24 @@ class FavoredTeamDto {
   name: string;
 }
 
-class PredictionDto {
+class GoalProbabilitiesDto {
+  @ApiProperty({
+    example: 62.5,
+    description: 'Probability of goals being over threshold (0-100)',
+  })
+  over: number;
+
+  @ApiProperty({
+    example: 37.5,
+    description: 'Probability of goals being under threshold (0-100)',
+  })
+  under: number;
+}
+
+class ResultPredictionDto {
   @ApiProperty({
     example: 'result',
-    description:
-      'Type of prediction. Currently supports "result" for match outcome.',
+    description: 'Type of prediction: result for match outcome',
   })
   type: 'result';
 
@@ -141,6 +154,60 @@ class PredictionDto {
   summary: string;
 }
 
+class GoalPredictionDto {
+  @ApiProperty({
+    example: 'over_2_5_goals',
+    enum: ['over_1_5_goals', 'over_2_5_goals'],
+    description: 'Type of prediction: over_1_5_goals or over_2_5_goals',
+  })
+  type: 'over_1_5_goals' | 'over_2_5_goals';
+
+  @ApiProperty({
+    example: 'over',
+    enum: ['over', 'under'],
+    description: 'The predicted outcome: over or under',
+  })
+  predictedOutcome: 'over' | 'under';
+
+  @ApiProperty({
+    example: 72.5,
+    description: 'Probability of the predicted outcome (0-100)',
+  })
+  probability: number;
+
+  @ApiProperty({
+    example: 'high',
+    enum: ['very high', 'high', 'medium', 'low'],
+    description:
+      'Confidence level: very high (>=90%), high (>=70% and <90%), medium (>=50% and <70%), low (<50%)',
+  })
+  confidence: 'very high' | 'high' | 'medium' | 'low';
+
+  @ApiProperty({
+    type: GoalProbabilitiesDto,
+    description: 'Probabilities for both outcomes',
+  })
+  probabilities: GoalProbabilitiesDto;
+
+  @ApiProperty({
+    example: 2.5,
+    description: 'Goal threshold (1.5 or 2.5)',
+  })
+  threshold: number;
+
+  @ApiProperty({
+    type: [PredictionFactorDto],
+    description: 'Key factors that influenced this prediction (top 3)',
+  })
+  keyFactors: PredictionFactorDto[];
+
+  @ApiProperty({
+    example: 'Over 2.5 goals predicted (high confidence, ~3.2 expected goals)',
+    description: 'Human-readable summary for UI display',
+  })
+  summary: string;
+}
+
 export class FixturePredictionDto {
   @ApiProperty({ example: 18535517 })
   fixtureId: number;
@@ -157,8 +224,18 @@ export class FixturePredictionDto {
   @ApiProperty({ type: PredictionLeagueDto })
   league: PredictionLeagueDto;
 
-  @ApiProperty({ type: [PredictionDto] })
-  predictions: PredictionDto[];
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: '#/components/schemas/ResultPredictionDto' },
+        { $ref: '#/components/schemas/GoalPredictionDto' },
+      ],
+    },
+    description:
+      'Array of predictions for this fixture (result, over 1.5 goals, over 2.5 goals)',
+  })
+  predictions: (ResultPredictionDto | GoalPredictionDto)[];
 
   @ApiProperty({ example: '2024-12-23T00:00:00Z' })
   generatedAt: string;
