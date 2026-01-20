@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { IntentClassifierService } from './intent-classifier.service';
 import { FixtureFilterService } from './fixture-filter.service';
+import { PromptUsageService } from '../prompt-usage/prompt-usage.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import {
   KickerGPTFixturesResponse,
   KickerGPTMatchSummary,
@@ -48,7 +50,22 @@ export class NaturalQueryService {
   constructor(
     private readonly intentClassifier: IntentClassifierService,
     private readonly fixtureFilter: FixtureFilterService,
+    private readonly promptUsageService: PromptUsageService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
+
+  /**
+   * Consume a prompt credit for the user based on their subscription plan.
+   */
+  private async consumePromptCredit(userId: string): Promise<void> {
+    const subscription =
+      await this.subscriptionsService.getSubscriptionForUser(userId);
+    await this.promptUsageService.consumePromptCredit({
+      userId,
+      plan: subscription.plan,
+      status: subscription.status,
+    });
+  }
 
   /**
    * Process a natural language query and return matching fixtures with predictions.
@@ -61,6 +78,9 @@ export class NaturalQueryService {
     this.logger.log(`Processing query for user ${userId}: "${query}"`);
 
     try {
+      // Consume credit before processing
+      await this.consumePromptCredit(userId);
+
       // Step 1: Classify intent
       const intent = await this.intentClassifier.classifyIntent(query);
       const normalizedQuery = this.intentClassifier
