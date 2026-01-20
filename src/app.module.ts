@@ -35,6 +35,7 @@ import { AdminModule } from './admin/admin.module';
 import { AdsModule } from './ads/ads.module';
 import { PredictionsModule } from './predictions/predictions.module';
 import { StrategiesModule } from './strategies/strategies.module';
+import { NaturalQueryModule } from './natural-query/natural-query.module';
 
 const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
   useClass: TypeOrmConfigService,
@@ -104,6 +105,7 @@ const infrastructureDatabaseModule = TypeOrmModule.forRootAsync({
     AdsModule,
     PredictionsModule,
     StrategiesModule,
+    NaturalQueryModule,
   ],
 })
 export class AppModule {}
