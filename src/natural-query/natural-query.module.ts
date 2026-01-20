@@ -5,6 +5,7 @@ import { IntentClassifierService } from './intent-classifier.service';
 import { FixtureFilterService } from './fixture-filter.service';
 import { OpenAiModule } from '../openai/openai.module';
 import { RedisModule } from '../redis/redis.module';
+import { QueryPreprocessorService } from './query-preprocessor.service';
 
 @Module({
   imports: [OpenAiModule, RedisModule],
@@ -13,6 +14,7 @@ import { RedisModule } from '../redis/redis.module';
     NaturalQueryService,
     IntentClassifierService,
     FixtureFilterService,
+    QueryPreprocessorService,
   ],
   exports: [NaturalQueryService],
 })
