@@ -53,6 +53,14 @@ export interface ClassifiedFilters {
 }
 
 /**
+ * Entities extracted from the query for debugging/analytics
+ */
+export interface ExtractedEntities {
+  teams: string[];
+  keywords: string[];
+}
+
+/**
  * The classified intent from a natural language query
  */
 export interface ClassifiedIntent {
@@ -62,6 +70,7 @@ export interface ClassifiedIntent {
   limit: number;
   isAmbiguous: boolean;
   clarificationNeeded: string | null;
+  extractedEntities?: ExtractedEntities;
 }
 
 /**
@@ -118,10 +127,12 @@ export interface AnalyzedMatch {
  */
 export interface QueryMetadata {
   query: string;
+  normalizedQuery: string;
   intent: ClassifiedIntent;
   fixturesSearched: number;
   matchesFound: number;
   executionTimeMs?: number;
+  cacheHit?: boolean;
 }
 
 /**
@@ -161,4 +172,34 @@ export interface BTTSCalculation {
   homeScoringRate: number;
   awayScoringRate: number;
   combinedProbability: number;
+}
+
+/**
+ * Query preprocessing result
+ */
+export interface PreprocessedQuery {
+  original: string;
+  normalized: string;
+  tokens: string[];
+  detectedLanguage?: string;
+}
+
+/**
+ * Error types for natural query processing
+ */
+export enum NaturalQueryErrorType {
+  CLASSIFICATION_FAILED = 'CLASSIFICATION_FAILED',
+  NO_FIXTURES_AVAILABLE = 'NO_FIXTURES_AVAILABLE',
+  INVALID_QUERY = 'INVALID_QUERY',
+  RATE_LIMITED = 'RATE_LIMITED',
+  INTERNAL_ERROR = 'INTERNAL_ERROR',
+}
+
+/**
+ * Structured error for natural query processing
+ */
+export interface NaturalQueryError {
+  type: NaturalQueryErrorType;
+  message: string;
+  suggestions?: string[];
 }

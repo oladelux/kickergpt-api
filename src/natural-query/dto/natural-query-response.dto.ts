@@ -233,6 +233,20 @@ export class ClassifiedFiltersDto {
   confidenceThreshold: ConfidenceThreshold;
 }
 
+export class ExtractedEntitiesDto {
+  @ApiProperty({
+    example: ['Arsenal', 'Chelsea'],
+    description: 'Team names mentioned in the query',
+  })
+  teams: string[];
+
+  @ApiProperty({
+    example: ['goals', 'over', 'england'],
+    description: 'Key terms extracted from the query',
+  })
+  keywords: string[];
+}
+
 export class ClassifiedIntentDto {
   @ApiProperty({
     example: 'over_1_5_goals',
@@ -275,6 +289,12 @@ export class ClassifiedIntentDto {
     description: 'Clarification needed if ambiguous',
   })
   clarificationNeeded: string | null;
+
+  @ApiPropertyOptional({
+    type: ExtractedEntitiesDto,
+    description: 'Entities extracted from the query',
+  })
+  extractedEntities?: ExtractedEntitiesDto;
 }
 
 export class QueryMetadataDto {
@@ -283,6 +303,12 @@ export class QueryMetadataDto {
     description: 'Original query',
   })
   query: string;
+
+  @ApiProperty({
+    example: 'over 1.5 goals from england',
+    description: 'Normalized/preprocessed query',
+  })
+  normalizedQuery: string;
 
   @ApiProperty({ type: ClassifiedIntentDto, description: 'Classified intent' })
   intent: ClassifiedIntentDto;
@@ -298,6 +324,12 @@ export class QueryMetadataDto {
     description: 'Execution time in milliseconds',
   })
   executionTimeMs?: number;
+
+  @ApiPropertyOptional({
+    example: false,
+    description: 'Whether the result was served from cache',
+  })
+  cacheHit?: boolean;
 }
 
 // ============ Main Response DTO ============
@@ -316,7 +348,8 @@ export class NaturalQueryResponseDto {
   matches: AnalyzedMatchDto[];
 
   @ApiPropertyOptional({
-    example: 'Found 5 matches from England with high over 1.5 goals potential',
+    example:
+      'Found 5 matches from England for over 1.5 goals with high confidence.',
     description: 'Summary of results',
   })
   summary?: string;
@@ -329,7 +362,7 @@ export class NaturalQueryResponseDto {
 
   @ApiPropertyOptional({
     example: ['Over 1.5 goals from England', 'BTTS predictions from La Liga'],
-    description: 'Suggested queries',
+    description: 'Suggested queries for better results or next steps',
   })
   suggestions?: string[];
 

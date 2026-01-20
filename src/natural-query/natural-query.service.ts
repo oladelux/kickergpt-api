@@ -31,6 +31,16 @@ const BTTS_WEIGHTS = {
   scoringAbility: 0.4,
 } as const;
 
+/**
+ * Configuration for the natural query service
+ */
+const CONFIG = {
+  maxResults: 50,
+  defaultResults: 10,
+  minMatchesForAnalysis: 3,
+  fallbackProbability: 50,
+} as const;
+
 @Injectable()
 export class NaturalQueryService {
   private readonly logger = new Logger(NaturalQueryService.name);
@@ -50,77 +60,172 @@ export class NaturalQueryService {
     const startTime = Date.now();
     this.logger.log(`Processing query for user ${userId}: "${query}"`);
 
-    // Step 1: Classify intent
-    const intent = await this.intentClassifier.classifyIntent(query);
+    try {
+      // Step 1: Classify intent
+      const intent = await this.intentClassifier.classifyIntent(query);
+      const normalizedQuery = this.intentClassifier
+        .getPreprocessor()
+        .preprocess(query).normalized;
 
-    // Handle ambiguous queries
-    if (intent.isAmbiguous) {
-      return {
-        success: false,
-        matches: [],
-        clarificationNeeded: intent.clarificationNeeded ?? undefined,
-        suggestions: this.getQuerySuggestions(),
-        metadata: {
+      // Handle ambiguous queries
+      if (intent.isAmbiguous) {
+        return this.createAmbiguousResponse(
           query,
+          normalizedQuery,
           intent,
-          fixturesSearched: 0,
-          matchesFound: 0,
-          executionTimeMs: Date.now() - startTime,
-        },
-      };
-    }
+          startTime,
+        );
+      }
 
-    // Step 2: Get filtered fixtures
-    const fixtures = await this.fixtureFilter.getFilteredFixtures(intent);
+      // Step 2: Get filtered fixtures
+      const fixtures = await this.fixtureFilter.getFilteredFixtures(intent);
 
-    if (fixtures.length === 0) {
-      const availableCountries =
-        await this.fixtureFilter.getAvailableCountries();
+      if (fixtures.length === 0) {
+        return await this.createNoFixturesResponse(
+          query,
+          normalizedQuery,
+          intent,
+          startTime,
+        );
+      }
+
+      // Step 3: Analyze fixtures based on prediction type
+      const analyzedMatches = this.analyzeFixtures(fixtures, intent);
+
+      // Step 4: Sort results
+      const sortedMatches = this.sortMatches(analyzedMatches, intent.sortBy);
+
+      // Step 5: Filter by confidence threshold
+      const filteredByConfidence = this.filterByConfidence(
+        sortedMatches,
+        intent.filters.confidenceThreshold,
+      );
+
+      // Step 6: Apply limit
+      const limitedMatches = filteredByConfidence.slice(0, intent.limit);
+
+      // Step 7: Build response
+      const summary = this.buildSummary(
+        limitedMatches,
+        intent,
+        fixtures.length,
+      );
+      const suggestions = this.generateContextualSuggestions(
+        intent,
+        limitedMatches.length,
+      );
+
       return {
         success: true,
-        matches: [],
-        summary: 'No matches found matching your criteria.',
-        suggestions: [
-          `Try searching without country filter`,
-          `Available countries: ${availableCountries.slice(0, 5).join(', ')}`,
-        ],
+        matches: limitedMatches,
+        summary,
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
         metadata: {
           query,
+          normalizedQuery,
           intent,
-          fixturesSearched: 0,
-          matchesFound: 0,
+          fixturesSearched: fixtures.length,
+          matchesFound: limitedMatches.length,
           executionTimeMs: Date.now() - startTime,
         },
       };
+    } catch (error) {
+      this.logger.error(
+        `Error processing query: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+      return this.createErrorResponse(query, error as Error, startTime);
     }
+  }
 
-    // Step 3: Analyze fixtures based on prediction type
-    const analyzedMatches = this.analyzeFixtures(fixtures, intent);
+  /**
+   * Create response for ambiguous queries
+   */
+  private createAmbiguousResponse(
+    query: string,
+    normalizedQuery: string,
+    intent: ClassifiedIntent,
+    startTime: number,
+  ): NaturalQueryResponse {
+    return {
+      success: false,
+      matches: [],
+      clarificationNeeded: intent.clarificationNeeded ?? undefined,
+      suggestions: this.getQuerySuggestions(),
+      metadata: {
+        query,
+        normalizedQuery,
+        intent,
+        fixturesSearched: 0,
+        matchesFound: 0,
+        executionTimeMs: Date.now() - startTime,
+      },
+    };
+  }
 
-    // Step 4: Sort results
-    const sortedMatches = this.sortMatches(analyzedMatches, intent.sortBy);
-
-    // Step 5: Filter by confidence threshold
-    const filteredByConfidence = this.filterByConfidence(
-      sortedMatches,
-      intent.filters.confidenceThreshold,
+  /**
+   * Create response when no fixtures are found
+   */
+  private async createNoFixturesResponse(
+    query: string,
+    normalizedQuery: string,
+    intent: ClassifiedIntent,
+    startTime: number,
+  ): Promise<NaturalQueryResponse> {
+    const availableCountries = await this.fixtureFilter.getAvailableCountries();
+    const suggestions = this.generateNoResultsSuggestions(
+      intent,
+      availableCountries,
     );
-
-    // Step 6: Apply limit
-    const limitedMatches = filteredByConfidence.slice(0, intent.limit);
-
-    // Build summary
-    const summary = this.buildSummary(limitedMatches, intent, fixtures.length);
 
     return {
       success: true,
-      matches: limitedMatches,
-      summary,
+      matches: [],
+      summary: this.buildNoResultsSummary(intent),
+      suggestions,
       metadata: {
         query,
+        normalizedQuery,
         intent,
-        fixturesSearched: fixtures.length,
-        matchesFound: limitedMatches.length,
+        fixturesSearched: 0,
+        matchesFound: 0,
+        executionTimeMs: Date.now() - startTime,
+      },
+    };
+  }
+
+  /**
+   * Create error response
+   */
+  private createErrorResponse(
+    query: string,
+    error: Error,
+    startTime: number,
+  ): NaturalQueryResponse {
+    return {
+      success: false,
+      matches: [],
+      summary:
+        'An error occurred while processing your query. Please try again.',
+      suggestions: this.getQuerySuggestions(),
+      metadata: {
+        query,
+        normalizedQuery: query,
+        intent: {
+          predictionType: 'any',
+          filters: {
+            countries: [],
+            leagues: [],
+            dateRange: { type: 'next_3_days' },
+            confidenceThreshold: 'any',
+          },
+          sortBy: 'confidence',
+          limit: 10,
+          isAmbiguous: true,
+          clarificationNeeded: error.message,
+        },
+        fixturesSearched: 0,
+        matchesFound: 0,
         executionTimeMs: Date.now() - startTime,
       },
     };
@@ -199,9 +304,28 @@ export class NaturalQueryService {
         return this.analyzeSpecificResultPrediction(fixture, 'draw');
       case 'any':
       default:
-        // For "any" type, return over 2.5 as default high-value prediction
-        return this.analyzeGoalPrediction(fixture, 2.5);
+        // For "any" type, analyze multiple prediction types and return the best one
+        return this.analyzeBestPrediction(fixture);
     }
+  }
+
+  /**
+   * Analyze multiple prediction types and return the one with highest confidence
+   */
+  private analyzeBestPrediction(
+    fixture: KickerGPTFixturesResponse,
+  ): QueryMatchPrediction {
+    const predictions = [
+      this.analyzeGoalPrediction(fixture, 2.5),
+      this.analyzeGoalPrediction(fixture, 1.5),
+      this.analyzeBTTSPrediction(fixture),
+      this.analyzeResultPrediction(fixture),
+    ];
+
+    // Return the prediction with highest probability
+    return predictions.reduce((best, current) =>
+      current.probability > best.probability ? current : best,
+    );
   }
 
   /**
@@ -242,12 +366,18 @@ export class NaturalQueryService {
       (homeGoalStats.avgScored + awayGoalStats.avgConceded) / 2 +
       (awayGoalStats.avgScored + homeGoalStats.avgConceded) / 2;
 
-    // Weight factors
+    // Weight factors based on data availability
+    const hasH2H = h2h.length > 0;
+    const homeWeight = hasH2H ? 0.35 : 0.45;
+    const awayWeight = hasH2H ? 0.35 : 0.45;
+    const h2hWeight = hasH2H ? 0.2 : 0;
+    const expectedGoalsWeight = 0.1;
+
     const probability =
-      homeOverRate * 0.35 +
-      awayOverRate * 0.35 +
-      h2hOverRate * 0.2 +
-      (expectedGoals > threshold ? 0.1 : 0);
+      homeOverRate * homeWeight +
+      awayOverRate * awayWeight +
+      h2hOverRate * h2hWeight +
+      (expectedGoals > threshold ? expectedGoalsWeight : 0);
 
     const normalizedProbability = Math.min(1, Math.max(0, probability)) * 100;
 
@@ -391,7 +521,6 @@ export class NaturalQueryService {
 
   /**
    * Analyze for a specific result type (home win, away win, or draw).
-   * Returns probability of that specific outcome.
    */
   private analyzeSpecificResultPrediction(
     fixture: KickerGPTFixturesResponse,
@@ -421,7 +550,7 @@ export class NaturalQueryService {
       (oddsResult?.home ?? 0.33) * 0.4 +
       homeForm * 0.3 +
       h2hResult.home * 0.2 +
-      0.05; // Home advantage
+      0.05;
     const awayProb =
       (oddsResult?.away ?? 0.33) * 0.4 + awayForm * 0.3 + h2hResult.away * 0.2;
     const drawProb = 1 - homeProb - awayProb;
@@ -432,7 +561,6 @@ export class NaturalQueryService {
     const normalizedAway = (awayProb / total) * 100;
     const normalizedDraw = (Math.max(0.1, drawProb) / total) * 100;
 
-    // Get the probability for the target outcome
     let probability: number;
     let predictionType: NaturalQueryPredictionType;
 
@@ -471,7 +599,8 @@ export class NaturalQueryService {
     teamId: number,
     threshold: number,
   ): number {
-    if (!matches || matches.length === 0) return 0.5;
+    if (!matches || matches.length === 0)
+      return CONFIG.fallbackProbability / 100;
 
     const recentMatches = matches.slice(0, 5);
     let overCount = 0;
@@ -490,14 +619,16 @@ export class NaturalQueryService {
       }
     }
 
-    return validMatches > 0 ? overCount / validMatches : 0.5;
+    return validMatches > 0
+      ? overCount / validMatches
+      : CONFIG.fallbackProbability / 100;
   }
 
   private calculateH2HOverRate(
     h2h: KickerGPTMatchSummary[],
     threshold: number,
   ): number {
-    if (!h2h || h2h.length === 0) return 0.5;
+    if (!h2h || h2h.length === 0) return CONFIG.fallbackProbability / 100;
 
     let overCount = 0;
     let validMatches = 0;
@@ -515,7 +646,9 @@ export class NaturalQueryService {
       }
     }
 
-    return validMatches > 0 ? overCount / validMatches : 0.5;
+    return validMatches > 0
+      ? overCount / validMatches
+      : CONFIG.fallbackProbability / 100;
   }
 
   private calculateTeamGoalStats(
@@ -557,14 +690,14 @@ export class NaturalQueryService {
     matches: KickerGPTMatchSummary[],
     teamId: number,
   ): number {
-    if (!matches || matches.length === 0) return 0.5;
+    if (!matches || matches.length === 0)
+      return CONFIG.fallbackProbability / 100;
 
     const recentMatches = matches.slice(0, 5);
     let bttsCount = 0;
     let validMatches = 0;
 
     for (const match of recentMatches) {
-      // Only consider matches where this team participated
       const isHome = match.teams.home.id === teamId;
       const isAway = match.teams.away.id === teamId;
       if (!isHome && !isAway) continue;
@@ -580,11 +713,13 @@ export class NaturalQueryService {
       }
     }
 
-    return validMatches > 0 ? bttsCount / validMatches : 0.5;
+    return validMatches > 0
+      ? bttsCount / validMatches
+      : CONFIG.fallbackProbability / 100;
   }
 
   private calculateH2HBTTSRate(h2h: KickerGPTMatchSummary[]): number {
-    if (!h2h || h2h.length === 0) return 0.5;
+    if (!h2h || h2h.length === 0) return CONFIG.fallbackProbability / 100;
 
     let bttsCount = 0;
     let validMatches = 0;
@@ -601,14 +736,17 @@ export class NaturalQueryService {
       }
     }
 
-    return validMatches > 0 ? bttsCount / validMatches : 0.5;
+    return validMatches > 0
+      ? bttsCount / validMatches
+      : CONFIG.fallbackProbability / 100;
   }
 
   private calculateScoringRate(
     matches: KickerGPTMatchSummary[],
     teamId: number,
   ): number {
-    if (!matches || matches.length === 0) return 0.5;
+    if (!matches || matches.length === 0)
+      return CONFIG.fallbackProbability / 100;
 
     const recentMatches = matches.slice(0, 5);
     let scoredCount = 0;
@@ -626,7 +764,9 @@ export class NaturalQueryService {
       }
     }
 
-    return validMatches > 0 ? scoredCount / validMatches : 0.5;
+    return validMatches > 0
+      ? scoredCount / validMatches
+      : CONFIG.fallbackProbability / 100;
   }
 
   private calculateFromOdds(
@@ -661,7 +801,8 @@ export class NaturalQueryService {
     matches: KickerGPTMatchSummary[],
     teamId: number,
   ): number {
-    if (!matches || matches.length === 0) return 0.5;
+    if (!matches || matches.length === 0)
+      return CONFIG.fallbackProbability / 100;
 
     const recentMatches = matches.slice(0, 5);
     let points = 0;
@@ -685,7 +826,7 @@ export class NaturalQueryService {
       }
     }
 
-    if (matchesAnalyzed === 0) return 0.5;
+    if (matchesAnalyzed === 0) return CONFIG.fallbackProbability / 100;
 
     const maxPoints = 3 * matchesAnalyzed;
     return points / maxPoints;
@@ -696,7 +837,10 @@ export class NaturalQueryService {
     homeTeamId: number,
   ): { home: number; away: number } {
     if (!h2h || h2h.length === 0) {
-      return { home: 0.5, away: 0.5 };
+      return {
+        home: CONFIG.fallbackProbability / 100,
+        away: CONFIG.fallbackProbability / 100,
+      };
     }
 
     let homeWins = 0;
@@ -723,13 +867,23 @@ export class NaturalQueryService {
     }
 
     const totalMatches = homeWins + awayWins + draws;
-    if (totalMatches === 0) return { home: 0.5, away: 0.5 };
+    if (totalMatches === 0) {
+      return {
+        home: CONFIG.fallbackProbability / 100,
+        away: CONFIG.fallbackProbability / 100,
+      };
+    }
 
     const homeScore = homeWins + draws * 0.5;
     const awayScore = awayWins + draws * 0.5;
     const total = homeScore + awayScore;
 
-    if (total === 0) return { home: 0.5, away: 0.5 };
+    if (total === 0) {
+      return {
+        home: CONFIG.fallbackProbability / 100,
+        away: CONFIG.fallbackProbability / 100,
+      };
+    }
 
     return {
       home: homeScore / total,
@@ -750,7 +904,6 @@ export class NaturalQueryService {
   ): PredictionFactor[] {
     const factors: PredictionFactor[] = [];
 
-    // Common factors
     const homeMatches = fixture.homeTeamRecentMatches ?? [];
     const awayMatches = fixture.awayTeamRecentMatches ?? [];
     const h2h = fixture.h2h ?? [];
@@ -761,7 +914,6 @@ export class NaturalQueryService {
       predictionType === 'over_2_5_goals' ||
       predictionType === 'any'
     ) {
-      // Goal-related factors
       const homeStats = this.calculateTeamGoalStats(
         homeMatches,
         fixture.teams.home.id,
@@ -772,8 +924,8 @@ export class NaturalQueryService {
       );
 
       factors.push({
-        name: 'Team Goal Averages',
-        description: `${fixture.teams.home.name}: ${homeStats.avgScored.toFixed(1)} scored, ${homeStats.avgConceded.toFixed(1)} conceded. ${fixture.teams.away.name}: ${awayStats.avgScored.toFixed(1)} scored, ${awayStats.avgConceded.toFixed(1)} conceded.`,
+        name: 'Goal Averages',
+        description: `${fixture.teams.home.name}: ${homeStats.avgScored.toFixed(1)} scored, ${homeStats.avgConceded.toFixed(1)} conceded | ${fixture.teams.away.name}: ${awayStats.avgScored.toFixed(1)} scored, ${awayStats.avgConceded.toFixed(1)} conceded`,
         impact: 'neutral',
         weight: 0.4,
       });
@@ -786,8 +938,8 @@ export class NaturalQueryService {
         const avgH2HGoals = h2hGoals / h2h.length;
 
         factors.push({
-          name: 'H2H History',
-          description: `${h2h.length} previous meetings, averaging ${avgH2HGoals.toFixed(1)} goals per match.`,
+          name: 'Head-to-Head',
+          description: `${h2h.length} previous meetings, averaging ${avgH2HGoals.toFixed(1)} goals per match`,
           impact: 'neutral',
           weight: 0.2,
         });
@@ -805,8 +957,8 @@ export class NaturalQueryService {
       );
 
       factors.push({
-        name: 'BTTS Rates',
-        description: `${fixture.teams.home.name}: ${Math.round(homeBTTS * 100)}% BTTS in last 5. ${fixture.teams.away.name}: ${Math.round(awayBTTS * 100)}% BTTS in last 5.`,
+        name: 'BTTS History',
+        description: `${fixture.teams.home.name}: ${Math.round(homeBTTS * 100)}% BTTS in last 5 | ${fixture.teams.away.name}: ${Math.round(awayBTTS * 100)}% BTTS in last 5`,
         impact: 'neutral',
         weight: 0.35,
       });
@@ -818,7 +970,6 @@ export class NaturalQueryService {
       predictionType === 'away_win' ||
       predictionType === 'draw'
     ) {
-      // Form factor
       const homeForm = this.calculateTeamForm(
         homeMatches,
         fixture.teams.home.id,
@@ -830,16 +981,15 @@ export class NaturalQueryService {
 
       factors.push({
         name: 'Recent Form',
-        description: `${fixture.teams.home.name}: ${Math.round(homeForm * 100)}% points won. ${fixture.teams.away.name}: ${Math.round(awayForm * 100)}% points won.`,
+        description: `${fixture.teams.home.name}: ${Math.round(homeForm * 100)}% points won | ${fixture.teams.away.name}: ${Math.round(awayForm * 100)}% points won`,
         impact: homeForm > awayForm ? 'home' : 'away',
         weight: 0.3,
       });
 
-      // Odds factor
       if (fixture.homeOdd && fixture.awayOdd) {
         factors.push({
-          name: 'Bookmaker Odds',
-          description: `${fixture.teams.home.name}: ${fixture.homeOdd}, ${fixture.teams.away.name}: ${fixture.awayOdd}`,
+          name: 'Odds',
+          description: `${fixture.teams.home.name}: ${fixture.homeOdd} | ${fixture.teams.away.name}: ${fixture.awayOdd}`,
           impact:
             parseFloat(fixture.homeOdd) < parseFloat(fixture.awayOdd)
               ? 'home'
@@ -866,7 +1016,6 @@ export class NaturalQueryService {
             new Date(b.fixture.date).getTime()
           );
         case 'goals_expected':
-          // Higher probability for goal predictions means more goals expected
           return b.prediction.probability - a.prediction.probability;
         default:
           return b.prediction.probability - a.prediction.probability;
@@ -896,7 +1045,7 @@ export class NaturalQueryService {
     totalSearched: number,
   ): string {
     if (matches.length === 0) {
-      return 'No matches found matching your criteria.';
+      return this.buildNoResultsSummary(intent);
     }
 
     const predictionTypeLabels: Record<NaturalQueryPredictionType, string> = {
@@ -908,29 +1057,152 @@ export class NaturalQueryService {
       away_win: 'away win',
       draw: 'draw',
       high_scoring: 'high-scoring',
-      any: 'all predictions',
+      any: 'best predictions',
     };
 
-    const countries =
-      intent.filters.countries.length > 0
-        ? ` from ${intent.filters.countries.join(', ')}`
-        : '';
+    const parts: string[] = [];
 
-    const confidenceLabel =
-      intent.filters.confidenceThreshold !== 'any'
-        ? ` with ${intent.filters.confidenceThreshold} confidence`
-        : '';
+    // Main result count
+    parts.push(
+      `Found ${matches.length} match${matches.length !== 1 ? 'es' : ''}`,
+    );
 
-    return `Found ${matches.length} matches${countries} for ${predictionTypeLabels[intent.predictionType]}${confidenceLabel}. Searched ${totalSearched} total fixtures.`;
+    // Country filter
+    if (intent.filters.countries.length > 0) {
+      parts.push(`from ${intent.filters.countries.join(', ')}`);
+    }
+
+    // Prediction type
+    parts.push(`for ${predictionTypeLabels[intent.predictionType]}`);
+
+    // Confidence
+    if (intent.filters.confidenceThreshold !== 'any') {
+      parts.push(`with ${intent.filters.confidenceThreshold} confidence`);
+    }
+
+    // Date range
+    if (intent.filters.dateRange.type === 'today') {
+      parts.push('today');
+    } else if (intent.filters.dateRange.type === 'tomorrow') {
+      parts.push('tomorrow');
+    }
+
+    // Add search context
+    if (totalSearched > matches.length) {
+      parts.push(`(searched ${totalSearched} fixtures)`);
+    }
+
+    return parts.join(' ') + '.';
+  }
+
+  private buildNoResultsSummary(intent: ClassifiedIntent): string {
+    const parts: string[] = ['No matches found'];
+
+    if (intent.filters.countries.length > 0) {
+      parts.push(`from ${intent.filters.countries.join(', ')}`);
+    }
+
+    if (intent.filters.confidenceThreshold !== 'any') {
+      parts.push(`with ${intent.filters.confidenceThreshold} confidence`);
+    }
+
+    if (intent.filters.dateRange.type === 'today') {
+      parts.push('today');
+    } else if (intent.filters.dateRange.type === 'tomorrow') {
+      parts.push('tomorrow');
+    }
+
+    return parts.join(' ') + '. Try broadening your search criteria.';
+  }
+
+  private generateNoResultsSuggestions(
+    intent: ClassifiedIntent,
+    availableCountries: string[],
+  ): string[] {
+    const suggestions: string[] = [];
+
+    // Suggest removing country filter
+    if (intent.filters.countries.length > 0) {
+      suggestions.push(
+        `Try searching without country filter: "${this.getPredictionTypeQuery(intent.predictionType)}"`,
+      );
+    }
+
+    // Suggest lowering confidence threshold
+    if (intent.filters.confidenceThreshold !== 'any') {
+      suggestions.push(
+        `Try lowering confidence: "${this.getPredictionTypeQuery(intent.predictionType)} from ${intent.filters.countries[0] || 'any country'}"`,
+      );
+    }
+
+    // Suggest expanding date range
+    if (intent.filters.dateRange.type !== 'next_3_days') {
+      suggestions.push(
+        `Try expanding date range: "${this.getPredictionTypeQuery(intent.predictionType)} this week"`,
+      );
+    }
+
+    // Show available countries
+    if (availableCountries.length > 0) {
+      suggestions.push(
+        `Available countries: ${availableCountries.slice(0, 5).join(', ')}`,
+      );
+    }
+
+    return suggestions.slice(0, 4);
+  }
+
+  private generateContextualSuggestions(
+    intent: ClassifiedIntent,
+    matchCount: number,
+  ): string[] {
+    const suggestions: string[] = [];
+
+    // If they searched for one type, suggest related types
+    if (intent.predictionType === 'over_2_5_goals' && matchCount > 0) {
+      suggestions.push(
+        `Also try: "BTTS from ${intent.filters.countries[0] || 'any country'}"`,
+      );
+    }
+
+    if (intent.predictionType === 'btts' && matchCount > 0) {
+      suggestions.push(
+        `Also try: "Over 2.5 goals from ${intent.filters.countries[0] || 'any country'}"`,
+      );
+    }
+
+    // If they got few results, suggest broadening
+    if (matchCount < 3 && matchCount > 0) {
+      if (intent.filters.confidenceThreshold !== 'any') {
+        suggestions.push('Try removing the confidence filter for more results');
+      }
+    }
+
+    return suggestions;
+  }
+
+  private getPredictionTypeQuery(type: NaturalQueryPredictionType): string {
+    const queries: Record<NaturalQueryPredictionType, string> = {
+      over_1_5_goals: 'Over 1.5 goals',
+      over_2_5_goals: 'Over 2.5 goals',
+      btts: 'BTTS',
+      result: 'Match results',
+      home_win: 'Home wins',
+      away_win: 'Away wins',
+      draw: 'Draws',
+      high_scoring: 'High-scoring matches',
+      any: 'All predictions',
+    };
+    return queries[type];
   }
 
   private getQuerySuggestions(): string[] {
     return [
-      'Over 1.5 goals from England',
-      'BTTS predictions from La Liga',
-      'High-confidence over 2.5 predictions',
-      'Top 5 confident result predictions',
-      'Matches from Germany tomorrow',
+      'BTTS from England',
+      'Over 2.5 goals from Spain',
+      'Confident predictions from Germany',
+      'Top 5 high-scoring matches',
+      'Home wins from Italy today',
     ];
   }
 }

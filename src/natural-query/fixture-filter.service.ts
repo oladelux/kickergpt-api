@@ -2,11 +2,166 @@ import { Injectable, Logger } from '@nestjs/common';
 import { RedisService } from '../redis/redis.service';
 import { KickerGPTFixturesResponse } from '../fixtures/types/fixtures-response.type';
 import { ClassifiedIntent, DateRangeFilter } from './types/natural-query.types';
-import {
-  getLeagueIdsForCountry,
-  getLeagueIdByName,
-  COUNTRY_ALIASES,
-} from './types/country-league-mapping';
+
+/**
+ * Configuration for fixture filtering
+ */
+const CONFIG = {
+  maxDaysToSearch: 3,
+  maxFixturesPerDay: 500,
+  cacheKeyPrefix: 'fixtures',
+} as const;
+
+/**
+ * Country name aliases for normalization.
+ * Maps common variations to the standard country names used in Sportmonks data.
+ */
+const COUNTRY_ALIASES: Record<string, string> = {
+  // England variations
+  uk: 'england',
+  'united kingdom': 'england',
+  britain: 'england',
+  'great britain': 'england',
+  english: 'england',
+  british: 'england',
+
+  // Spain variations
+  spanish: 'spain',
+  espana: 'spain',
+  españa: 'spain',
+
+  // Germany variations
+  german: 'germany',
+  deutschland: 'germany',
+
+  // Italy variations
+  italian: 'italy',
+  italia: 'italy',
+
+  // France variations
+  french: 'france',
+
+  // Netherlands variations
+  dutch: 'netherlands',
+  holland: 'netherlands',
+  'the netherlands': 'netherlands',
+  nederland: 'netherlands',
+
+  // Portugal variations
+  portuguese: 'portugal',
+
+  // Belgium variations
+  belgian: 'belgium',
+  belgique: 'belgium',
+
+  // Scotland variations
+  scottish: 'scotland',
+
+  // Turkey variations
+  turkish: 'turkey',
+  turkiye: 'turkey',
+  türkiye: 'turkey',
+
+  // USA variations
+  'united states': 'usa',
+  america: 'usa',
+  american: 'usa',
+  'united states of america': 'usa',
+
+  // Brazil variations
+  brazilian: 'brazil',
+  brasil: 'brazil',
+
+  // Argentina variations
+  argentine: 'argentina',
+  argentinian: 'argentina',
+
+  // Mexico variations
+  mexican: 'mexico',
+
+  // Japan variations
+  japanese: 'japan',
+
+  // Australia variations
+  australian: 'australia',
+  aussie: 'australia',
+
+  // Other common variations
+  greek: 'greece',
+  swedish: 'sweden',
+  norwegian: 'norway',
+  danish: 'denmark',
+  polish: 'poland',
+  austrian: 'austria',
+  swiss: 'switzerland',
+  russian: 'russia',
+  ukrainian: 'ukraine',
+  czech: 'czechia',
+  'czech republic': 'czechia',
+};
+
+/**
+ * League name to country mapping for when users mention league names
+ */
+const LEAGUE_TO_COUNTRY: Record<string, string> = {
+  // England
+  'premier league': 'england',
+  epl: 'england',
+  'english premier league': 'england',
+  championship: 'england',
+  'fa cup': 'england',
+  'efl cup': 'england',
+  'carabao cup': 'england',
+  'league cup': 'england',
+
+  // Spain
+  'la liga': 'spain',
+  laliga: 'spain',
+  'copa del rey': 'spain',
+
+  // Germany
+  bundesliga: 'germany',
+  'dfb pokal': 'germany',
+  'dfb-pokal': 'germany',
+
+  // Italy
+  'serie a': 'italy',
+  seriea: 'italy',
+  'coppa italia': 'italy',
+
+  // France
+  'ligue 1': 'france',
+  ligue1: 'france',
+  'coupe de france': 'france',
+
+  // Netherlands
+  eredivisie: 'netherlands',
+  'knvb beker': 'netherlands',
+
+  // Portugal
+  'primeira liga': 'portugal',
+  'liga portugal': 'portugal',
+  'taca de portugal': 'portugal',
+
+  // Belgium
+  'pro league': 'belgium',
+  'jupiler pro league': 'belgium',
+
+  // Scotland
+  'scottish premiership': 'scotland',
+  spfl: 'scotland',
+
+  // Turkey
+  'super lig': 'turkey',
+  'süper lig': 'turkey',
+
+  // Other
+  mls: 'usa',
+  'liga mx': 'mexico',
+  brasileirao: 'brazil',
+  'j1 league': 'japan',
+  'a-league': 'australia',
+};
 
 @Injectable()
 export class FixtureFilterService {
@@ -27,8 +182,15 @@ export class FixtureFilterService {
 
     // Fetch fixtures for each date
     for (const date of dates) {
-      const fixtures = await this.getFixturesForDate(date);
-      allFixtures.push(...fixtures);
+      try {
+        const fixtures = await this.getFixturesForDate(date);
+        allFixtures.push(...fixtures);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to fetch fixtures for ${date}: ${(error as Error).message}`,
+        );
+        // Continue with other dates
+      }
     }
 
     this.logger.log(`Found ${allFixtures.length} total fixtures in cache`);
@@ -54,7 +216,7 @@ export class FixtureFilterService {
     date: string,
   ): Promise<KickerGPTFixturesResponse[]> {
     // Get fixture IDs for the date
-    const idsKey = `fixtures:ids:${date}`;
+    const idsKey = `${CONFIG.cacheKeyPrefix}:ids:${date}`;
     const idsJson = await this.redisService.get<string>(idsKey);
 
     if (!idsJson) {
@@ -77,36 +239,82 @@ export class FixtureFilterService {
       return [];
     }
 
-    this.logger.debug(`Found ${fixtureIds.length} fixture IDs for ${date}`);
+    // Limit to prevent memory issues
+    const limitedIds = fixtureIds.slice(0, CONFIG.maxFixturesPerDay);
+    this.logger.debug(`Found ${limitedIds.length} fixture IDs for ${date}`);
 
     // Fetch all fixtures using pipeline for efficiency
     const fixtures: KickerGPTFixturesResponse[] = [];
     const pipeline = this.redisService.pipeline();
 
     if (!pipeline) {
-      this.logger.warn('Redis pipeline not available');
-      return [];
+      this.logger.warn(
+        'Redis pipeline not available, falling back to individual fetches',
+      );
+      return this.fetchFixturesIndividually(limitedIds);
     }
 
-    for (const id of fixtureIds) {
+    for (const id of limitedIds) {
       pipeline.get(`fixture:${id}`);
     }
 
-    const results = await pipeline.exec();
+    try {
+      const results = await pipeline.exec();
 
-    if (results) {
-      for (const result of results) {
-        if (result) {
-          try {
-            const fixture =
-              typeof result === 'object'
-                ? (result as unknown as KickerGPTFixturesResponse)
-                : (JSON.parse(result as string) as KickerGPTFixturesResponse);
-            fixtures.push(fixture);
-          } catch {
-            // Skip invalid entries
+      if (results) {
+        for (const result of results) {
+          if (result) {
+            try {
+              const fixture =
+                typeof result === 'object'
+                  ? (result as unknown as KickerGPTFixturesResponse)
+                  : (JSON.parse(result as string) as KickerGPTFixturesResponse);
+
+              // Validate fixture has required fields
+              if (this.isValidFixture(fixture)) {
+                fixtures.push(fixture);
+              }
+            } catch {
+              // Skip invalid entries
+            }
           }
         }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Pipeline execution failed: ${(error as Error).message}`,
+      );
+      return this.fetchFixturesIndividually(limitedIds);
+    }
+
+    return fixtures;
+  }
+
+  /**
+   * Fallback method to fetch fixtures individually if pipeline fails
+   */
+  private async fetchFixturesIndividually(
+    fixtureIds: number[],
+  ): Promise<KickerGPTFixturesResponse[]> {
+    const fixtures: KickerGPTFixturesResponse[] = [];
+
+    for (const id of fixtureIds) {
+      try {
+        const fixtureJson = await this.redisService.get<string>(
+          `fixture:${id}`,
+        );
+        if (fixtureJson) {
+          const fixture =
+            typeof fixtureJson === 'object'
+              ? (fixtureJson as unknown as KickerGPTFixturesResponse)
+              : (JSON.parse(fixtureJson) as KickerGPTFixturesResponse);
+
+          if (this.isValidFixture(fixture)) {
+            fixtures.push(fixture);
+          }
+        }
+      } catch {
+        // Skip invalid entries
       }
     }
 
@@ -114,7 +322,21 @@ export class FixtureFilterService {
   }
 
   /**
+   * Validate that a fixture has the required fields
+   */
+  private isValidFixture(fixture: KickerGPTFixturesResponse): boolean {
+    return !!(
+      fixture &&
+      typeof fixture.id === 'number' &&
+      fixture.teams?.home?.id &&
+      fixture.teams?.away?.id &&
+      fixture.league?.id
+    );
+  }
+
+  /**
    * Apply country and league filters to fixtures.
+   * Filters by matching the fixture's league.country field directly.
    */
   private applyFilters(
     fixtures: KickerGPTFixturesResponse[],
@@ -122,71 +344,97 @@ export class FixtureFilterService {
   ): KickerGPTFixturesResponse[] {
     const { countries, leagues } = intent.filters;
 
-    // Build set of allowed league IDs from countries
-    const allowedLeagueIds = new Set<number>();
-
-    // Add league IDs from country filters
-    for (const country of countries) {
-      const leagueIds = getLeagueIdsForCountry(country);
-      leagueIds.forEach((id) => allowedLeagueIds.add(id));
-    }
-
-    // Add directly specified league IDs
-    for (const league of leagues) {
-      const leagueId = getLeagueIdByName(league);
-      if (leagueId) {
-        allowedLeagueIds.add(leagueId);
-      }
-    }
-
-    // If no country/league filters, return all fixtures
-    if (
-      allowedLeagueIds.size === 0 &&
-      countries.length === 0 &&
-      leagues.length === 0
-    ) {
+    // If no filters, return all fixtures
+    if (countries.length === 0 && leagues.length === 0) {
       this.logger.debug(
         'No country/league filters applied, returning all fixtures',
       );
       return fixtures;
     }
 
-    // Filter fixtures
+    // Normalize country names from the intent
+    const normalizedCountries = countries.map((c) =>
+      this.normalizeCountryName(c),
+    );
+
+    // Get countries from league names (e.g., "Premier League" -> "england")
+    const countriesFromLeagues = leagues
+      .map((league) => this.getCountryFromLeagueName(league))
+      .filter((c): c is string => c !== null);
+
+    // Combine all target countries
+    const allTargetCountries = [
+      ...new Set([...normalizedCountries, ...countriesFromLeagues]),
+    ];
+
+    this.logger.debug(
+      `Filtering for countries: ${allTargetCountries.join(', ')}`,
+    );
+
+    // Filter fixtures by country name
     return fixtures.filter((fixture) => {
-      // If we have specific league IDs, filter by them
-      if (allowedLeagueIds.size > 0) {
-        return allowedLeagueIds.has(fixture.league.id);
-      }
+      const fixtureCountry = this.normalizeCountryName(fixture.league.country);
 
-      // Otherwise try to match by country name
-      if (countries.length > 0) {
-        const fixtureCountry = fixture.league.country.toLowerCase();
-        return countries.some((c) => {
-          const normalizedCountry = c.toLowerCase();
-          const aliasedCountry =
-            COUNTRY_ALIASES[normalizedCountry] || normalizedCountry;
+      // Check if fixture's country matches any target country
+      const countryMatches = allTargetCountries.some((targetCountry) => {
+        return (
+          fixtureCountry === targetCountry ||
+          fixtureCountry.includes(targetCountry) ||
+          targetCountry.includes(fixtureCountry)
+        );
+      });
+
+      // Also check league name if leagues were specified
+      if (!countryMatches && leagues.length > 0) {
+        const fixtureLeagueName = fixture.league.name.toLowerCase();
+        return leagues.some((targetLeague) => {
+          const normalizedTarget = targetLeague.toLowerCase();
           return (
-            fixtureCountry === aliasedCountry ||
-            fixtureCountry.includes(aliasedCountry) ||
-            aliasedCountry.includes(fixtureCountry)
+            fixtureLeagueName.includes(normalizedTarget) ||
+            normalizedTarget.includes(fixtureLeagueName)
           );
         });
       }
 
-      // Match by league name
-      if (leagues.length > 0) {
-        const fixtureLeague = fixture.league.name.toLowerCase();
-        return leagues.some((l) => {
-          const normalizedLeague = l.toLowerCase();
-          return (
-            fixtureLeague.includes(normalizedLeague) ||
-            normalizedLeague.includes(fixtureLeague)
-          );
-        });
-      }
-
-      return true;
+      return countryMatches;
     });
+  }
+
+  /**
+   * Normalize a country name to lowercase standard form.
+   * Handles aliases like "UK" -> "england", "Dutch" -> "netherlands"
+   */
+  private normalizeCountryName(country: string): string {
+    const lowered = country.toLowerCase().trim();
+
+    // Check if it's an alias
+    if (COUNTRY_ALIASES[lowered]) {
+      return COUNTRY_ALIASES[lowered];
+    }
+
+    return lowered;
+  }
+
+  /**
+   * Get country name from a league name.
+   * E.g., "Premier League" -> "england", "Bundesliga" -> "germany"
+   */
+  private getCountryFromLeagueName(leagueName: string): string | null {
+    const lowered = leagueName.toLowerCase().trim();
+
+    // Direct match
+    if (LEAGUE_TO_COUNTRY[lowered]) {
+      return LEAGUE_TO_COUNTRY[lowered];
+    }
+
+    // Partial match
+    for (const [league, country] of Object.entries(LEAGUE_TO_COUNTRY)) {
+      if (lowered.includes(league) || league.includes(lowered)) {
+        return country;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -195,6 +443,9 @@ export class FixtureFilterService {
    */
   private resolveDateRange(dateRange: DateRangeFilter): string[] {
     const today = new Date();
+    // Normalize to start of day in local timezone
+    today.setHours(0, 0, 0, 0);
+
     const dates: string[] = [];
 
     switch (dateRange.type) {
@@ -211,7 +462,7 @@ export class FixtureFilterService {
       case 'next_3_days':
       default:
         // Include today and next 2 days (3 days total)
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < CONFIG.maxDaysToSearch; i++) {
           const date = new Date(today);
           date.setDate(date.getDate() + i);
           dates.push(this.formatDate(date));
@@ -240,8 +491,17 @@ export class FixtureFilterService {
     const countriesSet = new Set<string>();
 
     for (const date of dates) {
-      const fixtures = await this.getFixturesForDate(date);
-      fixtures.forEach((f) => countriesSet.add(f.league.country));
+      try {
+        const fixtures = await this.getFixturesForDate(date);
+        fixtures.forEach((f) => {
+          if (f.league?.country) {
+            // Store with original capitalization from the data
+            countriesSet.add(f.league.country);
+          }
+        });
+      } catch {
+        // Continue with other dates
+      }
     }
 
     return Array.from(countriesSet).sort();
@@ -260,20 +520,69 @@ export class FixtureFilterService {
     >();
 
     for (const date of dates) {
-      const fixtures = await this.getFixturesForDate(date);
-      fixtures.forEach((f) => {
-        if (!leaguesMap.has(f.league.id)) {
-          leaguesMap.set(f.league.id, {
-            id: f.league.id,
-            name: f.league.name,
-            country: f.league.country,
-          });
-        }
-      });
+      try {
+        const fixtures = await this.getFixturesForDate(date);
+        fixtures.forEach((f) => {
+          if (!leaguesMap.has(f.league.id)) {
+            leaguesMap.set(f.league.id, {
+              id: f.league.id,
+              name: f.league.name,
+              country: f.league.country,
+            });
+          }
+        });
+      } catch {
+        // Continue with other dates
+      }
     }
 
     return Array.from(leaguesMap.values()).sort((a, b) =>
       a.country.localeCompare(b.country),
     );
+  }
+
+  /**
+   * Get fixture count for a specific date (for monitoring/debugging)
+   */
+  async getFixtureCountForDate(date: string): Promise<number> {
+    const idsKey = `${CONFIG.cacheKeyPrefix}:ids:${date}`;
+    const idsJson = await this.redisService.get<string>(idsKey);
+
+    if (!idsJson) {
+      return 0;
+    }
+
+    try {
+      const fixtureIds =
+        typeof idsJson === 'object'
+          ? (idsJson as unknown as number[])
+          : JSON.parse(idsJson);
+      return Array.isArray(fixtureIds) ? fixtureIds.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Get cache health status
+   */
+  async getCacheHealth(): Promise<{
+    dates: Array<{ date: string; fixtureCount: number }>;
+    totalFixtures: number;
+  }> {
+    const dates = this.resolveDateRange({ type: 'next_3_days' });
+    const dateStats: Array<{ date: string; fixtureCount: number }> = [];
+    let totalFixtures = 0;
+
+    for (const date of dates) {
+      const count = await this.getFixtureCountForDate(date);
+      dateStats.push({ date, fixtureCount: count });
+      totalFixtures += count;
+    }
+
+    return {
+      dates: dateStats,
+      totalFixtures,
+    };
   }
 }
