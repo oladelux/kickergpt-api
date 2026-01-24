@@ -59,4 +59,34 @@ export class RedisService {
     }
     return this.client.del(key);
   }
+
+  /**
+   * Get all keys matching a pattern using SCAN (cursor-based iteration)
+   * This is safer than KEYS for large datasets as it doesn't block Redis
+   * @param pattern - Redis key pattern (e.g., 'fixture:*')
+   * @param count - Approximate number of keys to return per scan (default: 100)
+   * @returns Array of matching keys
+   */
+  async scanKeys(pattern: string, count = 100): Promise<string[]> {
+    if (!this.client) {
+      return [];
+    }
+
+    const allKeys: string[] = [];
+    let cursor: string | number = 0;
+
+    do {
+      const [nextCursor, keys] = (await this.client.scan(cursor, {
+        match: pattern,
+        count,
+      })) as [string | number, string[]];
+
+      cursor = nextCursor;
+      if (Array.isArray(keys)) {
+        allKeys.push(...keys);
+      }
+    } while (String(cursor) !== '0');
+
+    return allKeys;
+  }
 }

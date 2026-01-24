@@ -858,6 +858,64 @@ export class SportmonksService {
     return fixturesResponses;
   }
 
+  /**
+   * Scan Redis for all fixture:* keys and extract their IDs
+   * @param updateFixtureIdsKey - If true, update the fixtures:ids:{date} key with all found IDs
+   * @param date - Optional date to use for the fixtures:ids key. Defaults to today
+   * @returns Array of all fixture IDs found in Redis
+   */
+  async scanAllFixtureIds(
+    updateFixtureIdsKey = false,
+    date?: string,
+  ): Promise<number[]> {
+    this.logger.log('Scanning Redis for all fixture:* keys using SCAN...');
+
+    const keys = await this.redisService.scanKeys('fixture:*');
+
+    if (!keys || keys.length === 0) {
+      this.logger.warn('No fixture keys found in Redis');
+      return [];
+    }
+
+    this.logger.log(`Found ${keys.length} fixture keys in Redis`);
+
+    // Extract IDs from keys (format: "fixture:12345")
+    const fixtureIds: number[] = [];
+    for (const key of keys) {
+      const match = key.match(/^fixture:(\d+)$/);
+      if (match) {
+        const id = parseInt(match[1], 10);
+        if (!isNaN(id)) {
+          fixtureIds.push(id);
+        }
+      }
+    }
+
+    // Remove duplicates and sort
+    const uniqueIds = [...new Set(fixtureIds)].sort((a, b) => a - b);
+
+    this.logger.log(
+      `Extracted ${uniqueIds.length} unique fixture IDs from ${keys.length} keys`,
+    );
+
+    // Optionally update the fixtures:ids key
+    if (updateFixtureIdsKey) {
+      const targetDate = date ?? this.getToday();
+      const idsKey = this.buildFixturesIdsCacheKey(targetDate);
+      const pipeline = this.redisService.pipeline();
+
+      pipeline?.set(idsKey, JSON.stringify(uniqueIds), {
+        ex: this.fixturesCacheTtlSeconds,
+      });
+
+      await pipeline?.exec();
+
+      this.logger.log(`Updated ${idsKey} with ${uniqueIds.length} fixture IDs`);
+    }
+
+    return uniqueIds;
+  }
+
   async getSelectedFixture(
     date: string,
     options: SportmonksFixturesRequestOptions = {},
