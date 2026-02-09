@@ -22,16 +22,8 @@ export class PredictionsScheduler {
    * Cron: minute hour day-of-month month day-of-week
    * "0 0 * * *" = At 00:00 every day
    */
-  @Cron('35 0 * * *')
+  @Cron('54 15 * * *')
   async generateDailyPredictions(): Promise<void> {
-    // Skip in development mode to avoid unnecessary processing
-    if (
-      this.configService.get('app.nodeEnv', { infer: true }) === 'development'
-    ) {
-      this.logger.log('Skipping predictions generation in development mode.');
-      return;
-    }
-
     this.logger.log('Starting daily predictions generation...');
 
     const startTime = Date.now();

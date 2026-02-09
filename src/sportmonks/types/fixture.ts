@@ -357,3 +357,51 @@ export type FootballLeague = {
   season: string | null;
   round: string | null;
 };
+
+export type LeagueTeamsPlayersResponse = {
+  league: {
+    id: number;
+    name: string;
+    country: string;
+  };
+  teams: {
+    id: number;
+    name: string;
+    players: {
+      id: number;
+      name: string;
+      position: string | null;
+      age: number | null;
+      height: number | null;
+    }[];
+  }[];
+};
+
+export type SportmonksTeam = {
+  id: number;
+  sport_id: number;
+  country_id: number | null;
+  venue_id: number | null;
+  gender: string | null;
+  name: string;
+  short_code: string | null;
+  image_path: string | null;
+  founded: number | null;
+  type: string | null;
+  placeholder: boolean;
+  last_played_at: string | null;
+};
+
+export type SportmonksSquadPlayer = {
+  id: number;
+  transfer_id: number | null;
+  player_id: number;
+  team_id: number;
+  position_id: number | null;
+  detailed_position_id: number | null;
+  start: string | null;
+  end: string | null;
+  captain: boolean;
+  jersey_number: number | null;
+  player: SportmonksPlayer;
+};

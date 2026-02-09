@@ -10,7 +10,13 @@ import {
   Inject,
   Logger,
 } from '@nestjs/common';
-import { ApiOkResponse, ApiTags, ApiQuery, ApiParam } from '@nestjs/swagger';
+import {
+  ApiOkResponse,
+  ApiTags,
+  ApiQuery,
+  ApiParam,
+  ApiOperation,
+} from '@nestjs/swagger';
 import { AdminMetricsService } from './admin-metrics.service';
 import { AdminService } from './admin.service';
 import { AdminApiKeyGuard } from './admin-api-key.guard';
@@ -40,6 +46,7 @@ import { SubscriptionStatus } from '../subscriptions/domain/subscription-status.
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { SportmonksService } from '../sportmonks/sportmonks.service';
+import { LeagueTeamsPlayersResponse } from '../sportmonks/types/fixture';
 
 @ApiTags('Admin')
 @Controller({
@@ -231,6 +238,20 @@ export class AdminController {
       message: `Flushed ${deletedKeys} cache keys successfully`,
       deletedKeys,
     };
+  }
+
+  @Get('leagues/:leagueId/teams-players')
+  @ApiOperation({ summary: 'Get league with teams and their players' })
+  @ApiOkResponse({ description: 'Returns league with teams and players' })
+  @ApiParam({
+    name: 'leagueId',
+    type: Number,
+    description: 'Sportmonks league ID',
+  })
+  async getLeagueTeamsAndPlayers(
+    @Param('leagueId', ParseIntPipe) leagueId: number,
+  ): Promise<LeagueTeamsPlayersResponse> {
+    return this.sportmonksService.getLeagueWithTeamsAndPlayers(leagueId);
   }
 
   @Get('fixtures/scan-ids')

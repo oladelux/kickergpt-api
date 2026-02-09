@@ -1,55 +1,165 @@
-# NestJS REST API boilerplate 🇺🇦
+# KickerGPT API
 
-[![image](https://github.com/brocoders/nestjs-boilerplate/assets/72293912/197da43e-02f4-4895-8d3e-b7a42a591c26)](https://github.com/new?template_name=nestjs-boilerplate&template_owner=brocoders)
-
-![github action status](https://github.com/brocoders/nestjs-boilerplate/actions/workflows/docker-e2e.yml/badge.svg)
-[![renovate](https://img.shields.io/badge/renovate-enabled-%231A1F6C?logo=renovatebot)](https://app.renovatebot.com/dashboard)
-[![Static Badge](https://img.shields.io/badge/supported_by-brocoders-d91965?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTMwIiBoZWlnaHQ9IjE4NyIgdmlld0JveD0iMCAwIDEzMCAxODciIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI%2BCjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMF83NzExXzQ4OTEpIj4KPHBhdGggZD0iTTc1Ljk5NjcgNDUuNzUwNkM2NS4xMDg5IDQ2Ljg2MSA1Ny45MjMgNTguNDA5NyA2Mi4yNzgxIDY4Ljg0OEwxMDguNDQyIDE4N0w3My42MDEzIDE1NS4wMTlIMzQuODQwOUMyMC42ODY4IDE1NS4wMTkgOS4zNjM0OSAxNDMuNDcgOS4zNjM0OSAxMjkuMDM0Vjk0LjYxMDVDOS4zNjM0OSA5Mi4xNjc1IDguNDkyNDYgODkuNzI0NSA2Ljc1MDQyIDg3Ljk0NzdMMCA4MS4wNjNMNi43NTA0MiA3NC4xNzgxQzguNDkyNDYgNzIuNDAxNCA5LjM2MzQ5IDY5Ljk1ODQgOS4zNjM0OSA2Ny41MTU0VjMxLjA5MjZDOS4zNjM0OSAxMy43Njk2IDIzLjA4MjEgMCAzOS44NDkyIDBINTguMTQwN0w3NS45OTY3IDQ1Ljc1MDZaIiBmaWxsPSJ3aGl0ZSIvPgo8cGF0aCBkPSJNMTI1LjY0NiAxMTIuMzc4Vjk0LjgzMjdDMTI1LjY0NiA5My43MjIyIDEyNi4wODEgOTIuNjExOCAxMjYuOTUyIDkxLjcyMzRMMTMwLjAwMSA4OC4zOTIxTDEyNi45NTIgODUuMDYwN0MxMjYuMDgxIDg0LjE3MjQgMTI1LjY0NiA4My4wNjE5IDEyNS42NDYgODEuOTUxNFY2OS43MzY1QzEyNS42NDYgNTYuNDExMSAxMTQuOTc2IDQ1Ljc1MDcgMTAyLjEyOCA0NS43NTA3SDc1Ljk5NzNMMTA1LjYxMiAxMzAuODExQzEwNS42MTIgMTMwLjgxMSAxMTAuNjIgMTMwLjgxMSAxMTAuODM4IDEzMC44MTFDMTE5LjExMyAxMjkuMDM1IDEyNS42NDYgMTIxLjQ4NCAxMjUuNjQ2IDExMi4zNzhaIiBmaWxsPSJ3aGl0ZSIvPgo8L2c%2BCjxkZWZzPgo8Y2xpcFBhdGggaWQ9ImNsaXAwXzc3MTFfNDg5MSI%2BCjxyZWN0IHdpZHRoPSIxMzAiIGhlaWdodD0iMTg3IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM%2BCjwvc3ZnPgo%3D&logoColor=d91965)](https://brocoders.com/)
-[![Discord Badge](https://img.shields.io/badge/discord-NodeJS_boilerplate-d91965?style=flat&labelColor=5866f2&logo=discord&logoColor=white&link=https://discord.com/channels/520622812742811698/1197293125434093701)](https://discord.com/channels/520622812742811698/1197293125434093701)
-
-<br />
-<p align="center"><a href="https://discord.com/channels/520622812742811698/1197293125434093701"><img src="https://github.com/brocoders/nestjs-boilerplate/assets/72293912/c9d5fbf0-b56d-46b5-bb30-f96f44764bae" width="300"/></a></p>
-<br />
-
-## Description <!-- omit in toc -->
-
-NestJS REST API boilerplate for a typical project
-
-[Full documentation here](/docs/readme.md)
-
-Demo: <https://nestjs-boilerplate-test.herokuapp.com/docs>
-
-A fully compatible frontend boilerplate: <https://github.com/brocoders/extensive-react-boilerplate>
-
-Belongs to the [bc boilerplates](https://bcboilerplates.com/) ecosystem
-
-<https://github.com/user-attachments/assets/a66f114a-c714-4036-8eeb-20cbf04ae985>
-
-## Table of Contents <!-- omit in toc -->
-
-- [Features](#features)
-- [Contributors](#contributors)
-- [Support](#support)
+AI-powered football analysis and predictions platform API. Provides intelligent match analysis, real-time fixture data, AI-powered predictions, and natural language query capabilities.
 
 ## Features
 
-- [x] Database. Support [TypeORM](https://www.npmjs.com/package/typeorm) and [Mongoose](https://www.npmjs.com/package/mongoose).
-- [x] Seeding.
-- [x] Config Service ([@nestjs/config](https://www.npmjs.com/package/@nestjs/config)).
-- [x] Mailing ([nodemailer](https://www.npmjs.com/package/nodemailer)).
-- [x] Sign in and sign up via email.
-- [x] Social sign in (Apple, Facebook, Google).
-- [x] Admin and User roles.
-- [x] Internationalization/Translations (I18N) ([nestjs-i18n](https://www.npmjs.com/package/nestjs-i18n)).
-- [x] File uploads. Support local and Amazon S3 drivers.
-- [x] Swagger.
-- [x] E2E and units tests.
-- [x] Docker.
-- [x] CI (Github Actions).
+- **AI Match Analysis** - GPT-4o-mini powered fixture analysis and predictions
+- **Natural Language Queries** - Search fixtures using plain English (e.g., "BTTS from La Liga", "Over 2.5 goals from England")
+- **Multi-Source Data** - Integrates Sportmonks and API-Football for comprehensive coverage
+- **Prediction Engine** - BTTS, Over/Under goals, match result predictions with confidence levels
+- **Custom Strategies** - User-defined betting strategy creation and matching
+- **Subscription Tiers** - Free, 3-Day Pass, 7-Day Pass, Pro, and Monthly Unlimited plans
+- **Multi-Payment Support** - Stripe (USD/EUR/GBP), Paystack (NGN), mobile IAP
+- **Ad Rewards** - Credit earning through ad viewing for mobile users
 
-## Fixture Analysis Endpoint
+## Tech Stack
 
-The API now exposes `POST /api/v1/fixtures/{fixtureId}/analyze`, which takes a user prompt and the selected fixture id, pulls the latest fixture plus head-to-head data from API-Football, and streams that context into OpenAI for a conversational summary. Example body:
+- **Framework**: NestJS 11.x with TypeScript
+- **Database**: PostgreSQL 17 with TypeORM
+- **Caching**: Redis (Upstash)
+- **AI**: OpenAI API (gpt-4o-mini)
+- **Payments**: Stripe, Paystack, RevenueCat, Google Play
+- **Email**: Nodemailer with Resend SMTP
+- **Storage**: AWS S3
+- **Docs**: Swagger/OpenAPI
+
+## Prerequisites
+
+- Node.js >= 16.0.0
+- PostgreSQL 17+
+- Redis (or Upstash account)
+- npm or yarn
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd match-gpt-api
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Copy the environment template and configure:
+```bash
+cp env-example-relational .env
+```
+
+4. Update `.env` with your credentials:
+```env
+# Database
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_USERNAME=root
+DATABASE_PASSWORD=secret
+DATABASE_NAME=api
+
+# Authentication
+AUTH_JWT_SECRET=your-secret-key
+AUTH_JWT_TOKEN_EXPIRES_IN=1h
+
+# OpenAI
+OPENAI_API_KEY=your-openai-key
+
+# Sportmonks
+SPORTMONKS_API_TOKEN=your-sportmonks-token
+
+# Redis/Upstash
+UPSTASH_REDIS_REST_URL=your-upstash-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+```
+
+5. Run database migrations:
+```bash
+npm run migration:run
+```
+
+6. Seed the database (optional):
+```bash
+npm run seed:run:relational
+```
+
+## Running the Application
+
+### Development
+```bash
+npm run start:dev
+```
+
+### Production
+```bash
+npm run build
+npm run start:prod
+```
+
+### Docker
+```bash
+docker-compose up -d
+```
+
+This starts:
+- PostgreSQL on port 5432
+- Maildev on port 1080 (web) / 1025 (SMTP)
+- Adminer on port 8080
+- API on port 3000
+
+## API Documentation
+
+Swagger documentation is available at `/docs` when the server is running.
+
+### Key Endpoints
+
+#### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/email/register` | Register new user |
+| POST | `/api/v1/auth/email/login` | Login |
+| POST | `/api/v1/auth/email/confirm` | Confirm email |
+| GET | `/api/v1/auth/me` | Get current user |
+| POST | `/api/v1/auth/refresh` | Refresh token |
+
+#### Fixtures & Matches
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/matches/today` | Today's fixtures |
+| GET | `/api/v1/matches/three-days` | Next 3 days fixtures |
+| GET | `/api/v1/fixtures/today` | Today's fixtures (API-Football) |
+| POST | `/api/v1/fixtures/{fixtureId}/analyze` | AI analysis for a fixture |
+
+#### Predictions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/predictions` | Today's match predictions |
+
+#### Natural Language Query
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/query` | Search fixtures with natural language |
+| GET | `/api/v1/query/suggestions` | Example queries |
+| GET | `/api/v1/query/countries` | Available countries |
+| GET | `/api/v1/query/leagues` | Available leagues |
+
+#### Subscriptions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/subscriptions/me` | Current subscription |
+| POST | `/api/v1/subscriptions/select-plan` | Initiate checkout |
+| GET | `/api/v1/subscriptions/usage` | Credit usage |
+
+#### Strategies
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/strategies` | Create strategy |
+| GET | `/api/v1/strategies` | List strategies |
+| POST | `/api/v1/strategies/{id}/find-matches` | Find matching fixtures |
+
+## Fixture Analysis
+
+The API exposes `POST /api/v1/fixtures/{fixtureId}/analyze` for AI-powered match analysis:
 
 ```http
 POST /api/v1/fixtures/123456/analyze
@@ -62,44 +172,114 @@ Authorization: Bearer <token>
 }
 ```
 
-Authenticated users can replay their own conversations:
-
+Chat history endpoints:
 ```
 GET /api/v1/fixtures/user/chats?limit=20&offset=0
-GET /api/v1/fixtures/123456/chats?limit=20
-Authorization: Bearer <token>
+GET /api/v1/fixtures/{fixtureId}/chats?limit=20
 ```
 
-Environment variables required for the analysis pipeline:
+## Project Structure
 
 ```
+src/
+├── admin/              # Admin dashboard & metrics
+├── ads/                # Ad reward system
+├── auth/               # Authentication & authorization
+├── fixtures/           # Fixture data & AI analysis
+├── natural-query/      # Natural language search
+├── openai/             # OpenAI integration
+├── paystack/           # Paystack payments
+├── predictions/        # Match predictions
+├── prompt-usage/       # API credit management
+├── redis/              # Redis/Upstash integration
+├── sportmonks/         # Sportmonks API integration
+├── strategies/         # User betting strategies
+├── stripe/             # Stripe payments
+├── subscriptions/      # Subscription management
+├── users/              # User management
+└── utils/              # Shared utilities
+```
+
+## Subscription Plans
+
+| Plan | Features |
+|------|----------|
+| Free | 5 predictions per request |
+| 3-Day Pass | 5 predictions per request, 3 days access |
+| 7-Day Pass | 5 predictions per request, 7 days access |
+| Pro | Unlimited predictions, advanced strategies |
+| Monthly Unlimited | All features, monthly billing |
+
+## Testing
+
+```bash
+# Unit tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# Coverage
+npm run test:cov
+
+# E2E tests
+npm run test:e2e
+
+# Docker E2E
+npm run test:e2e:relational:docker
+```
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run start:dev` | Start in development mode |
+| `npm run start:prod` | Start in production mode |
+| `npm run build` | Build the application |
+| `npm run lint` | Run ESLint |
+| `npm run format` | Format with Prettier |
+| `npm run migration:generate` | Generate migration |
+| `npm run migration:run` | Run migrations |
+| `npm run seed:run:relational` | Run database seeds |
+
+## Environment Variables
+
+See `env-example-relational` for the complete list. Key categories:
+
+- **Database**: PostgreSQL connection settings
+- **Authentication**: JWT secrets and token expiration
+- **APIs**: OpenAI, Sportmonks, API-Football keys
+- **Payments**: Stripe, Paystack credentials
+- **Email**: SMTP configuration
+- **Storage**: AWS S3 settings
+- **Redis**: Upstash connection details
+
+Required for AI analysis:
+```env
 OPENAI_API_KEY=<your key>
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.3
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-## Contributors
+## Scheduled Tasks
 
-<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
-<!-- prettier-ignore-start -->
-<!-- markdownlint-disable -->
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Shchepotin"><img src="https://avatars.githubusercontent.com/u/6001723?v=4?s=100" width="100px;" alt="Vladyslav Shchepotin"/><br /><sub><b>Vladyslav Shchepotin</b></sub></a><br /><a href="#maintenance-Shchepotin" title="Maintenance">🚧</a> <a href="#doc-Shchepotin" title="Documentation">📖</a> <a href="#code-Shchepotin" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/SergeiLomako"><img src="https://avatars.githubusercontent.com/u/31205374?v=4?s=100" width="100px;" alt="SergeiLomako"/><br /><sub><b>SergeiLomako</b></sub></a><br /><a href="#code-SergeiLomako" title="Code">💻</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ElenVlass"><img src="https://avatars.githubusercontent.com/u/72293912?v=4?s=100" width="100px;" alt="Elena Vlasenko"/><br /><sub><b>Elena Vlasenko</b></sub></a><br /><a href="#doc-ElenVlass" title="Documentation">📖</a></td>
-      <td align="center" valign="top" width="14.28%"><a href="http://brocoders.com"><img src="https://avatars.githubusercontent.com/u/226194?v=4?s=100" width="100px;" alt="Rodion"/><br /><sub><b>Rodion</b></sub></a><br /><a href="#business-sars" title="Business development">💼</a></td>
-    </tr>
-  </tbody>
-</table>
+The API runs several cron jobs:
 
-<!-- markdownlint-restore -->
-<!-- prettier-ignore-end -->
+- **Prediction Generation**: Daily at 00:00 UTC
+- **Cache Warming**: Periodic fixture and prediction updates
+- **Email Notifications**: Subscription reminders, strategy announcements
 
-<!-- ALL-CONTRIBUTORS-LIST:END -->
+## Documentation
 
-## Support
+Additional documentation available in `/docs`:
+- Architecture patterns
+- Authentication flows
+- Database schema
+- File uploading
+- Mobile app integration
+- Installation guides
 
-If you seek consulting, support, or wish to collaborate, please contact us via [boilerplates@brocoders.com](mailto:boilerplates@brocoders.com). For any inquiries regarding boilerplates, feel free to ask on [GitHub Discussions](https://github.com/brocoders/nestjs-boilerplate/discussions) or [Discord](https://discord.com/channels/520622812742811698/1197293125434093701).
+## License
+
+Private - All rights reserved

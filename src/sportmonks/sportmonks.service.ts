@@ -17,6 +17,7 @@ import { SportmonksConfig } from './config/sportmonks-config.type';
 import { WeatherConfig } from '../weather/config/weather-config.type';
 import {
   FootballLeague,
+  LeagueTeamsPlayersResponse,
   PlayerInjury,
   SportmonksFixture,
   SportmonksFixturesRequestOptions,
@@ -27,6 +28,8 @@ import {
   SportmonksScore,
   SportmonksSeason,
   SportmonksSidelined,
+  SportmonksSquadPlayer,
+  SportmonksTeam,
   SportmonksVenue,
   SportmonksWeatherReport,
   SportmonksPagination,
@@ -215,6 +218,8 @@ export class SportmonksService {
       }
       url.searchParams.set(key, String(value));
     });
+
+    this.logger.log(`Sportmonks API request: ${url.toString()}`);
 
     return this.scheduleApiFootballRequest(() =>
       this.requestJson<T>(
@@ -1608,6 +1613,118 @@ export class SportmonksService {
       elapsed: null,
       extra: null,
     };
+  }
+
+  async getLeagueWithTeamsAndPlayers(
+    leagueId: number,
+  ): Promise<LeagueTeamsPlayersResponse> {
+    // 1. Get league with current season
+    const leagueResponse = await this.get<{
+      data?: SportmonksLeague & {
+        currentseason?: { id: number; name: string };
+      };
+      message?: string;
+    }>(`/leagues/${leagueId}`, {
+      include: 'currentSeason;country',
+    });
+
+    // Check if response has no data (league not found or no access)
+    if (!leagueResponse?.data || leagueResponse.message) {
+      this.logger.warn(
+        `No league found for ID ${leagueId}: ${leagueResponse?.message ?? 'No data returned'}`,
+      );
+      throw new HttpException(
+        leagueResponse?.message ?? `League with ID ${leagueId} not found`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const league = leagueResponse.data;
+    const seasonId = league.currentseason?.id;
+
+    if (!seasonId) {
+      this.logger.warn(`No current season found for league ${leagueId}`);
+      return {
+        league: {
+          id: league.id,
+          name: league.name,
+          country: league.country?.name ?? 'Unknown',
+        },
+        teams: [],
+      };
+    }
+
+    // 2. Get teams for the current season
+    const teamsResponse = await this.get<{ data: SportmonksTeam[] }>(
+      `/teams/seasons/${seasonId}`,
+    );
+
+    const teams = teamsResponse.data ?? [];
+
+    // 3. For each team, get players (squad) using batches to avoid rate limits
+    const teamsWithPlayers = await this.fetchTeamsWithSquads(teams);
+
+    return {
+      league: {
+        id: league.id,
+        name: league.name,
+        country: league.country?.name ?? 'Unknown',
+      },
+      teams: teamsWithPlayers,
+    };
+  }
+
+  private async fetchTeamsWithSquads(
+    teams: SportmonksTeam[],
+  ): Promise<LeagueTeamsPlayersResponse['teams']> {
+    const squadFetchers = teams.map((team) => async () => {
+      const squadResponse = await this.get<{ data: SportmonksSquadPlayer[] }>(
+        `/squads/teams/${team.id}`,
+        { include: 'player.position;player.detailedPosition;player.metadata' },
+      );
+
+      const players = (squadResponse.data ?? []).map((sp) => ({
+        id: sp.player?.id ?? sp.player_id,
+        name:
+          (sp.player?.firstname && sp.player?.lastname
+            ? `${sp.player.firstname} ${sp.player.lastname}`
+            : null) ??
+          sp.player?.display_name ??
+          sp.player?.common_name ??
+          'Unknown',
+        position:
+          (sp.player as { detailedposition?: { name?: string } })
+            ?.detailedposition?.name ??
+          sp.player?.position?.name ??
+          null,
+        age: sp.player?.date_of_birth
+          ? this.calculateAge(sp.player.date_of_birth)
+          : null,
+        height: sp.player?.height ?? null,
+      }));
+
+      return {
+        id: team.id,
+        name: team.name,
+        players,
+      };
+    });
+
+    return this.fetchInBatches(squadFetchers, 5);
+  }
+
+  private calculateAge(dateOfBirth: string): number | null {
+    const dob = new Date(dateOfBirth);
+    if (isNaN(dob.getTime())) {
+      return null;
+    }
+    const today = new Date();
+    let age = today.getFullYear() - dob.getFullYear();
+    const monthDiff = today.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+      age--;
+    }
+    return age;
   }
 
   private extractPlayerRatings(
