@@ -11,6 +11,15 @@ What's planned for the KickerGPT backend, roughly in priority order. The client 
 - [ ] **Rate limiting.** Throttle per user and per IP on `/analyze` and `/query` to protect OpenAI and data-provider quotas.
 - [ ] **Clean up boilerplate.** Trim the inherited Brocoders docs and any template code KickerGPT does not use.
 
+## Next: tech stack
+
+- [ ] **Move to a monorepo.** Bring the web app, the mobile apps and the API into one repository, using npm workspaces with Turborepo:
+  - `apps/web`: the React + Vite web client
+  - `apps/mobile`: the Capacitor Android (and later iOS) apps
+  - `apps/api`: the NestJS backend
+  - `packages/shared`: shared TypeScript types and API contracts (fixtures, strategies, subscriptions), so the client and server stay in sync
+- [ ] **One pipeline.** Run lint, type-check, tests and builds for every app from a single CI workflow, and only rebuild the apps that changed.
+
 ## Next: product
 
 - [ ] **Strategy alerts.** A cron job that emails or pushes users when a new fixture matches one of their active strategies.
