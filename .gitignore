@@ -39,3 +39,13 @@ lerna-debug.log*
 .env
 /ormconfig.json
 .codegpt
+
+# Environment variables and secrets (never commit real values)
+.env.*
+*.pem
+*.key
+*.p12
+
+# Local tooling
+.qodo/
+.claude/
