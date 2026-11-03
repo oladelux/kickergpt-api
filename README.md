@@ -1,285 +1,164 @@
 # KickerGPT API
 
-AI-powered football analysis and predictions platform API. Provides intelligent match analysis, real-time fixture data, AI-powered predictions, and natural language query capabilities.
+The backend for **KickerGPT**, an AI-powered football match analysis platform. The API gathers fixture, team, injury and weather data from several providers, turns it into probability-based predictions, and powers an AI analyst that answers questions about any match. It also handles accounts, subscriptions and user-defined match strategies.
+
+**Frontend (web + Android):** [oladelux/kickergpt](https://github.com/oladelux/kickergpt)
+
+---
+
+## Who it's for
+
+KickerGPT is for people interested in **football match analysis**: fans who want a clear breakdown of upcoming fixtures, analysts who want form, head-to-head and team news in one place, and data-minded followers who want to write their own rules to find matches worth studying.
+
+This repository is for developers who run or extend the KickerGPT backend.
 
 ## Features
 
-- **AI Match Analysis** - GPT-4o-mini powered fixture analysis and predictions
-- **Natural Language Queries** - Search fixtures using plain English (e.g., "BTTS from La Liga", "Over 2.5 goals from England")
-- **Multi-Source Data** - Integrates Sportmonks and API-Football for comprehensive coverage
-- **Prediction Engine** - BTTS, Over/Under goals, match result predictions with confidence levels
-- **Custom Strategies** - User-defined betting strategy creation and matching
-- **Subscription Tiers** - Free, 3-Day Pass, 7-Day Pass, Pro, and Monthly Unlimited plans
-- **Multi-Payment Support** - Stripe (USD/EUR/GBP), Paystack (NGN), mobile IAP
-- **Ad Rewards** - Credit earning through ad viewing for mobile users
+- **AI match analysis.** Chat-style analysis of any fixture using OpenAI (`gpt-4o-mini`), with conversation history saved per user and fixture.
+- **Natural-language search.** Find fixtures with plain-English queries such as *"BTTS from La Liga"* or *"Over 2.5 goals from England"*.
+- **Prediction engine.** Daily BTTS, over/under goals and match-result predictions with confidence levels.
+- **Multi-source data.** Combines Sportmonks and API-Football fixture data with weather data, cached in Redis.
+- **Strategies.** Users define rule-based conditions (form, H2H, goals, clean sheets and more), and the API finds the fixtures that match.
+- **Control Room.** Tracks how past predictions turned out.
+- **Subscriptions and credits.** Free and PRO tiers with prompt allowances. Payments run through Stripe (USD/EUR/GBP), Paystack (NGN) and Google Play, and mobile users can earn credits from rewarded ads.
+- **Admin endpoints.** User, subscription, usage and revenue metrics, plus cache control, behind an admin API key.
+- **Scheduled jobs.** Prediction generation, cache warming and email notifications run as cron jobs.
 
-## Tech Stack
+## Tech stack
 
-- **Framework**: NestJS 11.x with TypeScript
-- **Database**: PostgreSQL 17 with TypeORM
-- **Caching**: Redis (Upstash)
-- **AI**: OpenAI API (gpt-4o-mini)
-- **Payments**: Stripe, Paystack, RevenueCat, Google Play
-- **Email**: Nodemailer with Resend SMTP
-- **Storage**: AWS S3
-- **Docs**: Swagger/OpenAPI
+- **Framework:** [NestJS 11](https://nestjs.com) with TypeScript, built on the [Brocoders NestJS boilerplate](https://github.com/brocoders/nestjs-boilerplate)
+- **Database:** PostgreSQL 17 with TypeORM (migrations and seeds)
+- **Cache:** Redis (Upstash)
+- **AI:** OpenAI API
+- **Football data:** Sportmonks, API-Football, plus a weather API
+- **Payments:** Stripe, Paystack, Google Play
+- **Email:** Nodemailer over SMTP (Resend in production, Maildev locally)
+- **Storage:** AWS S3 or local disk
+- **Docs:** Swagger / OpenAPI at `/docs`
+- **Deployment:** Docker, with GitHub Actions workflows for staging and production
 
-## Prerequisites
+## Getting started
 
-- Node.js >= 16.0.0
-- PostgreSQL 17+
-- Redis (or Upstash account)
-- npm or yarn
+### Prerequisites
 
-## Installation
+- Node.js 22 (see `.nvmrc`) and npm
+- PostgreSQL 17, or Docker
+- A Redis / Upstash instance
+- API keys for OpenAI, Sportmonks and API-Football. Payment provider keys are only needed if you test checkout.
 
-1. Clone the repository:
+### Install and run
+
 ```bash
-git clone <repository-url>
-cd match-gpt-api
-```
-
-2. Install dependencies:
-```bash
+git clone https://github.com/oladelux/kickergpt-api.git
+cd kickergpt-api
 npm install
+cp env-example-relational .env     # then fill in your own values
+npm run migration:run
+npm run seed:run:relational        # optional sample data
+npm run start:dev                  # http://localhost:3000/api/v1
 ```
 
-3. Copy the environment template and configure:
+Swagger docs are served at `http://localhost:3000/docs`.
+
+To use the API from the frontend, set `VITE_API_URL=http://localhost:3000/api/v1` in the [frontend's](https://github.com/oladelux/kickergpt) `.env`.
+
+### Run with Docker
+
 ```bash
 cp env-example-relational .env
+docker compose up -d
 ```
 
-4. Update `.env` with your credentials:
-```env
-# Database
-DATABASE_HOST=localhost
-DATABASE_PORT=5432
-DATABASE_USERNAME=root
-DATABASE_PASSWORD=secret
-DATABASE_NAME=api
+This starts PostgreSQL (5432), Maildev (1080 web / 1025 SMTP), Adminer (8080) and the API (3000).
 
-# Authentication
-AUTH_JWT_SECRET=your-secret-key
-AUTH_JWT_TOKEN_EXPIRES_IN=1h
+### Environment variables
 
-# OpenAI
-OPENAI_API_KEY=your-openai-key
+`env-example-relational` lists every variable, with placeholder values only. The main groups are:
 
-# Sportmonks
-SPORTMONKS_API_TOKEN=your-sportmonks-token
+| Group | Variables |
+| --- | --- |
+| App | `APP_PORT`, `API_PREFIX`, `FRONTEND_DOMAIN`, `NODE_ENV` |
+| Database | `DATABASE_*` |
+| Auth | `AUTH_*_SECRET`, `AUTH_*_EXPIRES_IN` |
+| AI | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE` |
+| Football data | `SPORTMONKS_*`, `API_FOOTBALL_*`, `WEATHER_API_KEY` |
+| Cache | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+| Payments | `STRIPE_*`, `PAYSTACK_*` |
+| Email | `MAIL_*` |
+| Storage | `FILE_DRIVER`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `AWS_*` |
+| Admin and ads | `ADMIN_API_KEY`, `MAX_ADS_PER_DAY`, `AD_COOLDOWN_MINUTES`, `CREDITS_PER_AD` |
 
-# Redis/Upstash
-UPSTASH_REDIS_REST_URL=your-upstash-url
-UPSTASH_REDIS_REST_TOKEN=your-upstash-token
-```
+Never commit `.env`. It is listed in `.gitignore`.
 
-5. Run database migrations:
-```bash
-npm run migration:run
-```
+## API overview
 
-6. Seed the database (optional):
-```bash
-npm run seed:run:relational
-```
+All routes are prefixed with `/api/v1`. The full reference is in Swagger at `/docs`.
 
-## Running the Application
+| Area | Endpoints |
+| --- | --- |
+| Auth | `POST /auth/email/register`, `POST /auth/email/login`, `POST /auth/email/confirm`, `POST /auth/forgot/password`, `POST /auth/reset/password`, `GET /auth/me`, `POST /auth/refresh`, `POST /auth/logout` |
+| Matches | `GET /matches/today`, `GET /matches/three-days`, `GET /fixtures/today` |
+| Analysis | `POST /analyze/{fixtureId}`, `GET /fixtures/user/chats`, `GET /fixtures/{fixtureId}/chats` |
+| Predictions | `GET /predictions` |
+| Natural-language query | `POST /query`, `GET /query/suggestions`, `GET /query/countries`, `GET /query/leagues` |
+| Strategies | `GET/POST /strategies`, `GET/PATCH/DELETE /strategies/{id}`, `POST /strategies/{id}/find-matches` |
+| Control Room | `GET /control-room`, `POST /control-room/outcomes` |
+| Subscriptions | `GET /subscriptions/me`, `POST /subscriptions/select-plan`, `GET /subscriptions/usage`, `POST /subscriptions/verify`, `POST /subscriptions/cancel` |
+| Ads | `POST /ads/reward` |
+| Admin | `/admin/metrics`, `/admin/users`, `/admin/subscriptions`, `/admin/prompt-usage/*` and more (admin API key required) |
 
-### Development
-```bash
-npm run start:dev
-```
-
-### Production
-```bash
-npm run build
-npm run start:prod
-```
-
-### Docker
-```bash
-docker-compose up -d
-```
-
-This starts:
-- PostgreSQL on port 5432
-- Maildev on port 1080 (web) / 1025 (SMTP)
-- Adminer on port 8080
-- API on port 3000
-
-## API Documentation
-
-Swagger documentation is available at `/docs` when the server is running.
-
-### Key Endpoints
-
-#### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/auth/email/register` | Register new user |
-| POST | `/api/v1/auth/email/login` | Login |
-| POST | `/api/v1/auth/email/confirm` | Confirm email |
-| GET | `/api/v1/auth/me` | Get current user |
-| POST | `/api/v1/auth/refresh` | Refresh token |
-
-#### Fixtures & Matches
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/matches/today` | Today's fixtures |
-| GET | `/api/v1/matches/three-days` | Next 3 days fixtures |
-| GET | `/api/v1/fixtures/today` | Today's fixtures (API-Football) |
-| POST | `/api/v1/fixtures/{fixtureId}/analyze` | AI analysis for a fixture |
-
-#### Predictions
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/predictions` | Today's match predictions |
-
-#### Natural Language Query
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/query` | Search fixtures with natural language |
-| GET | `/api/v1/query/suggestions` | Example queries |
-| GET | `/api/v1/query/countries` | Available countries |
-| GET | `/api/v1/query/leagues` | Available leagues |
-
-#### Subscriptions
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/subscriptions/me` | Current subscription |
-| POST | `/api/v1/subscriptions/select-plan` | Initiate checkout |
-| GET | `/api/v1/subscriptions/usage` | Credit usage |
-
-#### Strategies
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/strategies` | Create strategy |
-| GET | `/api/v1/strategies` | List strategies |
-| POST | `/api/v1/strategies/{id}/find-matches` | Find matching fixtures |
-
-## Fixture Analysis
-
-The API exposes `POST /api/v1/fixtures/{fixtureId}/analyze` for AI-powered match analysis:
+Example analysis request:
 
 ```http
-POST /api/v1/fixtures/123456/analyze
-Content-Type: application/json
+POST /api/v1/analyze/123456
 Authorization: Bearer <token>
+Content-Type: application/json
 
-{
-  "message": "Give me the tactical matchup for this game",
-  "tone": "concise"
-}
+{ "message": "Give me the tactical matchup for this game", "tone": "concise" }
 ```
 
-Chat history endpoints:
-```
-GET /api/v1/fixtures/user/chats?limit=20&offset=0
-GET /api/v1/fixtures/{fixtureId}/chats?limit=20
-```
-
-## Project Structure
+## Project structure
 
 ```
 src/
-├── admin/              # Admin dashboard & metrics
-├── ads/                # Ad reward system
-├── auth/               # Authentication & authorization
-├── fixtures/           # Fixture data & AI analysis
-├── natural-query/      # Natural language search
-├── openai/             # OpenAI integration
-├── paystack/           # Paystack payments
-├── predictions/        # Match predictions
-├── prompt-usage/       # API credit management
-├── redis/              # Redis/Upstash integration
-├── sportmonks/         # Sportmonks API integration
-├── strategies/         # User betting strategies
-├── stripe/             # Stripe payments
-├── subscriptions/      # Subscription management
-├── users/              # User management
-└── utils/              # Shared utilities
-```
-
-## Subscription Plans
-
-| Plan | Features |
-|------|----------|
-| Free | 5 predictions per request |
-| 3-Day Pass | 5 predictions per request, 3 days access |
-| 7-Day Pass | 5 predictions per request, 7 days access |
-| Pro | Unlimited predictions, advanced strategies |
-| Monthly Unlimited | All features, monthly billing |
-
-## Testing
-
-```bash
-# Unit tests
-npm test
-
-# Watch mode
-npm run test:watch
-
-# Coverage
-npm run test:cov
-
-# E2E tests
-npm run test:e2e
-
-# Docker E2E
-npm run test:e2e:relational:docker
+├── admin/           # Admin metrics and tools
+├── ads/             # Rewarded-ad credits
+├── analysis/        # AI fixture analysis
+├── auth/            # Email auth, JWT, refresh tokens
+├── control-room/    # Prediction outcome tracking
+├── fixture-chats/   # Saved analysis conversations
+├── fixtures/        # API-Football fixtures
+├── natural-query/   # Plain-English fixture search
+├── openai/          # OpenAI client
+├── paystack/        # Paystack payments
+├── predictions/     # Daily prediction engine
+├── prompt-usage/    # Credit and usage limits
+├── redis/           # Upstash Redis cache
+├── sportmonks/      # Sportmonks data and match lists
+├── strategies/      # User strategies and matching
+├── stripe/          # Stripe payments
+├── subscriptions/   # Plans, checkout and webhooks
+├── weather/         # Weather data for fixtures
+└── users/, mail/, files/, database/ ...   # Boilerplate modules
 ```
 
 ## Scripts
 
 | Script | Description |
-|--------|-------------|
-| `npm run start:dev` | Start in development mode |
-| `npm run start:prod` | Start in production mode |
-| `npm run build` | Build the application |
-| `npm run lint` | Run ESLint |
-| `npm run format` | Format with Prettier |
-| `npm run migration:generate` | Generate migration |
-| `npm run migration:run` | Run migrations |
-| `npm run seed:run:relational` | Run database seeds |
+| --- | --- |
+| `npm run start:dev` | Start with hot reload |
+| `npm run build` / `npm run start:prod` | Build and run the production server |
+| `npm run lint` / `npm run format` | ESLint / Prettier |
+| `npm test` / `npm run test:e2e` | Unit / end-to-end tests |
+| `npm run migration:generate` / `migration:run` | TypeORM migrations |
+| `npm run seed:run:relational` | Seed the database |
 
-## Environment Variables
+More background on the boilerplate's architecture, auth, database and testing is in [`docs/`](docs/readme.md).
 
-See `env-example-relational` for the complete list. Key categories:
+## Roadmap
 
-- **Database**: PostgreSQL connection settings
-- **Authentication**: JWT secrets and token expiration
-- **APIs**: OpenAI, Sportmonks, API-Football keys
-- **Payments**: Stripe, Paystack credentials
-- **Email**: SMTP configuration
-- **Storage**: AWS S3 settings
-- **Redis**: Upstash connection details
-
-Required for AI analysis:
-```env
-OPENAI_API_KEY=<your key>
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_TEMPERATURE=0.3
-OPENAI_BASE_URL=https://api.openai.com/v1
-```
-
-## Scheduled Tasks
-
-The API runs several cron jobs:
-
-- **Prediction Generation**: Daily at 00:00 UTC
-- **Cache Warming**: Periodic fixture and prediction updates
-- **Email Notifications**: Subscription reminders, strategy announcements
-
-## Documentation
-
-Additional documentation available in `/docs`:
-- Architecture patterns
-- Authentication flows
-- Database schema
-- File uploading
-- Mobile app integration
-- Installation guides
+The plans for what comes next are in **[ROADMAP.md](ROADMAP.md)**.
 
 ## License
 
-Private - All rights reserved
+[MIT](LICENSE) © Oladele Olorunsola. Built on the MIT-licensed Brocoders NestJS boilerplate.
